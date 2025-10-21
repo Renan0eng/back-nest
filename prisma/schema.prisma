@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- MODELOS PRINCIPAIS ---
+
+// Seu modelo de Usuário, com algumas relações adicionadas
+// model User {
+//   idUser    String  @id @default(cuid())
+//   email     String  @unique
+//   password  String
+//   name      String?
+//   active    Boolean @default(false)
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+
+//   // Relação com Role
+//   roleId String?
+//   role   Role?   @relation(fields: [roleId], references: [idRole])
+
+//   // Relações com as novas entidades
+//   requests  CommunityRequest[] // Um usuário pode ter vários chamados
+//   votes     Vote[]             // Um usuário pode ter vários votos
+
+//   @@map("users")
+// }
+
+model User {
+  idUser         String       @id @default(cuid())
+  name           String
+  avatar         String?
+  email          String       @unique
+  password       String
+  cpf            String?      @unique
+  cep            String?
+  phone          String?
+  user_id_create Int?
+  user_id_update Int?
+  user_id_delete Int?
+  dt_delete      DateTime?
+  created        DateTime     @default(now())
+  updated        DateTime?    @updatedAt
+  active         Boolean      @default(false)
+  // tasks          Task[]       @relation("User")
+  // columns        Column[]     @relation("User")
+  nivelAcessoId  Int          @default(1)
+  nivel_acesso   Nivel_Acesso @relation(fields: [nivelAcessoId], references: [idNivelAcesso])
+
+  @@index([idUser])
+  @@index([user_id_create])
+  @@index([user_id_update])
+  @@index([user_id_delete])
+}
+
+model Nivel_Acesso {
+  idNivelAcesso      Int           @id @default(autoincrement())
+  nome      String
+  descricao String?
+  users     User[]
+  menus     Menu_Acesso[]
+
+  @@index([idNivelAcesso])
+}
+
+model Menu_Acesso {
+  idMenuAcesso           Int            @id @default(autoincrement())
+  nome         String // Ex.: "Dashboard"
+  slug         String // Ex.: "dashboard"
+  nivel_acesso Nivel_Acesso[]
+
+  visualizar Boolean @default(false)
+  criar      Boolean @default(false)
+  editar     Boolean @default(false)
+  excluir    Boolean @default(false)
+  relatorio  Boolean @default(false)
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  SHORT_TEXT
+  PARAGRAPH
+  CHECKBOXES
+}
+
+model Form {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  questions   Question[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Question {
+  id        String       @id @default(uuid())
+  text      String
+  type      QuestionType
+  required  Boolean      @default(false)
+  order     Int // Para manter a ordem do drag-and-drop
+  form      Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId    String
+  options   Option[]
+}
+
+model Option {
+  id         String   @id @default(uuid())
+  text       String
+  order      Int // Para manter a ordem do drag-and-drop
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId String
+}

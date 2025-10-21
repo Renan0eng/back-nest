@@ -1,0 +1,390 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+		"name": "API Comunidade Cidadã",
+		"description": "Coleção Postman para a API de gestão de chamados da comunidade, enquetes e votações.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Maria Souza\",\n  \"email\": \"maria.souza@email.com\",\n  \"password\": \"senha_segura_123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"register"
+							]
+						},
+						"description": "Registra um novo usuário no sistema."
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Extrai o token da resposta e o salva na variável de ambiente 'authToken'",
+									"if (pm.response.code === 201) {",
+									"    pm.environment.set(\"authToken\", pm.response.json().access_token);",
+									"    console.log('Token salvo com sucesso!');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"maria.souza@email.com\",\n  \"password\": \"senha_segura_123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"description": "Autentica um usuário e retorna um token JWT. O token é salvo automaticamente na variável 'authToken'."
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints para registro e login de usuários."
+		},
+		{
+			"name": "Community Requests",
+			"auth": {
+				"type": "bearer",
+				"bearer": [
+					{
+						"key": "token",
+						"value": "{{authToken}}",
+						"type": "string"
+					}
+				]
+			},
+			"item": [
+				{
+					"name": "Create Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Poste de luz queimado na Praça Central\",\n  \"description\": \"O poste em frente ao banco está apagado há 3 dias.\",\n  \"location\": \"Praça Central, em frente ao nº 100\",\n  \"images\": [\"https://example.com/imagem1.jpg\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/community-requests",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"community-requests"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List All Requests",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/community-requests",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"community-requests"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Request by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/community-requests/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"community-requests",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seu_id_aqui"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Request",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"IN_PROGRESS\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/community-requests/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"community-requests",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seu_id_aqui"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Request",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/community-requests/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"community-requests",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seu_id_aqui"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Gerenciamento dos chamados da comunidade. Requer autenticação."
+		},
+		{
+			"name": "Polls",
+			"item": [
+				{
+					"name": "Create Poll",
+					"auth": {
+						"type": "bearer",
+						"bearer": [
+							{
+								"key": "token",
+								"value": "{{authToken}}",
+								"type": "string"
+							}
+						]
+					},
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"question\": \"Você aprova a nova ciclovia na Avenida Principal?\",\n  \"description\": \"A prefeitura planeja construir uma nova ciclovia de 2km.\",\n  \"startDate\": \"2025-10-01T00:00:00Z\",\n  \"endDate\": \"2025-10-15T23:59:59Z\",\n  \"options\": [\n    { \"text\": \"Sim, aprovo\" },\n    { \"text\": \"Não, discordo\" },\n    { \"text\": \"Abstenho-me\" }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/polls",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"polls"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Active Polls",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/polls/active",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"polls",
+								"active"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Poll by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/polls/:id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"polls",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "seu_id_aqui"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Vote on a Poll",
+					"auth": {
+						"type": "bearer",
+						"bearer": [
+							{
+								"key": "token",
+								"value": "{{authToken}}",
+								"type": "string"
+							}
+						]
+					},
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"optionId\": \"id_da_opcao_aqui\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/polls/:id/vote",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"polls",
+								":id",
+								"vote"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "id_da_enquete_aqui"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Poll Results",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/polls/:id/results",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"polls",
+								":id",
+								"results"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "id_da_enquete_aqui"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Gerenciamento de enquetes e votações."
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "noauth"
+	}
+}
