@@ -1,3 +1,5 @@
+// schema.prisma
+
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -8,28 +10,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- MODELOS PRINCIPAIS ---
-
-// Seu modelo de Usuário, com algumas relações adicionadas
-// model User {
-//   idUser    String  @id @default(cuid())
-//   email     String  @unique
-//   password  String
-//   name      String?
-//   active    Boolean @default(false)
-//   createdAt DateTime @default(now())
-//   updatedAt DateTime @updatedAt
-
-//   // Relação com Role
-//   roleId String?
-//   role   Role?   @relation(fields: [roleId], references: [idRole])
-
-//   // Relações com as novas entidades
-//   requests  CommunityRequest[] // Um usuário pode ter vários chamados
-//   votes     Vote[]             // Um usuário pode ter vários votos
-
-//   @@map("users")
-// }
+// --- MODELOS DE AUTENTICAÇÃO E ACESSO ---
 
 model User {
   idUser         String       @id @default(cuid())
@@ -47,10 +28,10 @@ model User {
   created        DateTime     @default(now())
   updated        DateTime?    @updatedAt
   active         Boolean      @default(false)
-  // tasks          Task[]       @relation("User")
-  // columns        Column[]     @relation("User")
   nivelAcessoId  Int          @default(1)
   nivel_acesso   Nivel_Acesso @relation(fields: [nivelAcessoId], references: [idNivelAcesso])
+
+  formResponses Response[]
 
   @@index([idUser])
   @@index([user_id_create])
@@ -59,27 +40,28 @@ model User {
 }
 
 model Nivel_Acesso {
-  idNivelAcesso      Int           @id @default(autoincrement())
-  nome      String
-  descricao String?
-  users     User[]
-  menus     Menu_Acesso[]
+  idNivelAcesso Int           @id @default(autoincrement())
+  nome          String
+  descricao     String?
+  users         User[]
+  menus         Menu_Acesso[]
 
   @@index([idNivelAcesso])
 }
 
 model Menu_Acesso {
-  idMenuAcesso           Int            @id @default(autoincrement())
-  nome         String // Ex.: "Dashboard"
-  slug         String // Ex.: "dashboard"
+  idMenuAcesso Int            @id @default(autoincrement())
+  nome         String
+  slug         String
   nivel_acesso Nivel_Acesso[]
-
-  visualizar Boolean @default(false)
-  criar      Boolean @default(false)
-  editar     Boolean @default(false)
-  excluir    Boolean @default(false)
-  relatorio  Boolean @default(false)
+  visualizar   Boolean        @default(false)
+  criar        Boolean        @default(false)
+  editar       Boolean        @default(false)
+  excluir      Boolean        @default(false)
+  relatorio    Boolean        @default(false)
 }
+
+// --- MODELOS DO CONSTRUTOR DE FORMULÁRIOS ---
 
 enum QuestionType {
   MULTIPLE_CHOICE
@@ -93,25 +75,64 @@ model Form {
   title       String
   description String?
   questions   Question[]
+  responses   Response[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
 
 model Question {
-  id        String       @id @default(uuid())
-  text      String
-  type      QuestionType
-  required  Boolean      @default(false)
-  order     Int // Para manter a ordem do drag-and-drop
-  form      Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
-  formId    String
-  options   Option[]
+  id       String       @id @default(uuid())
+  text     String
+  type     QuestionType
+  required Boolean      @default(false)
+  order    Int
+  form     Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId   String
+  options  Option[]
+  answers  Answer[]
 }
 
 model Option {
   id         String   @id @default(uuid())
   text       String
-  order      Int // Para manter a ordem do drag-and-drop
+  order      Int
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   questionId String
+}
+
+// --- NOVOS MODELOS PARA ARMAZENAR RESPOSTAS ---
+
+model Response {
+  id          String   @id @default(uuid())
+  submittedAt DateTime @default(now())
+
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formId String
+
+  user   User?   @relation(fields: [userId], references: [idUser], onDelete: SetNull)
+  userId String?
+
+  answers Answer[]
+
+  @@index([formId])
+  @@index([userId])
+}
+
+model Answer {
+  id String @id @default(uuid())
+
+  // Para SHORT_TEXT, PARAGRAPH, MULTIPLE_CHOICE
+  value String?
+
+  // Para CHECKBOXES
+  values String[]
+
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  responseId String
+
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId String
+
+  @@index([responseId])
+  @@index([questionId])
 }

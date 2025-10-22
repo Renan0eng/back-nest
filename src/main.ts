@@ -10,7 +10,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
 
   app.enableCors({
-    origin: 'https://prefeitura.renannardi.com',
+    origin: 'http://localhost:3001',
     credentials: true,
   });
 

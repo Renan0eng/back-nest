@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { SaveFormDto } from './dto/save-form.dto';
+import { SubmitResponseDto } from './dto/submit-response.dto';
 
 @Injectable()
 export class FormService {
@@ -116,5 +117,103 @@ export class FormService {
         });
     }
 
-    // (Você pode adicionar findAll, delete, etc. aqui)
+    async submitResponse(
+        formId: string,
+        submitResponseDto: SubmitResponseDto,
+        userId?: string, // 2. Recebe o userId (opcional)
+    ) {
+        const { answers } = submitResponseDto;
+
+        // Usamos uma transação para garantir que ou tudo é salvo, ou nada é.
+        return this.prisma.$transaction(async (tx) => {
+            // 3. Cria o "recibo" da Resposta, vinculando ao formulário e ao usuário
+            const newResponse = await tx.response.create({
+                data: {
+                    form: { connect: { id: formId } },
+                    // Se o userId foi fornecido, conecta-o
+                    ...(userId && { user: { connect: { idUser: userId } } }),
+                },
+            });
+
+            // 4. Prepara os dados para todas as respostas individuais
+            const answersToCreate = answers.map((answer) => ({
+                responseId: newResponse.id, // Vincula à resposta-pai
+                questionId: answer.questionId,
+                value: answer.value,   // Será 'null' se for CHECKBOX
+                values: answer.values, // Será 'null' se for outro tipo
+            }));
+
+            // 5. Cria todas as respostas individuais de uma só vez
+            await tx.answer.createMany({
+                data: answersToCreate,
+            });
+
+            return newResponse;
+        });
+    }
+
+    async findResponses(formId: string) {
+        // Busca o formulário e suas respostas, incluindo o usuário que enviou
+        return this.prisma.form.findUnique({
+            where: { id: formId },
+            select: {
+                id: true,
+                title: true,
+                responses: {
+                    select: {
+                        id: true, 
+                        submittedAt: true,
+                        user: {
+                            select: {
+                                idUser: true,
+                                name: true,
+                                email: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        submittedAt: 'desc',
+                    },
+                },
+            },
+        });
+    }
+
+    // NOVO MÉTODO: Ver detalhes de uma submissão
+    async findResponseDetail(responseId: string) {
+        const response = await this.prisma.response.findUnique({
+            where: { id: responseId },
+            include: {
+                form: {
+                    select: {
+                        id: true,
+                        title: true,
+                    },
+                },
+                user: {
+                    select: {
+                        idUser: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                answers: {
+                    include: {
+                        question: {
+                            select: {
+                                id: true,
+                                text: true,
+                                type: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!response) {
+            throw new NotFoundException(`Resposta com ID ${responseId} não encontrada.`);
+        }
+        return response;
+    }
 }
