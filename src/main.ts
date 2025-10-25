@@ -10,13 +10,13 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
 
   app.enableCors({
-    // origin: 'http://localhost:3001',
-    origin: 'https://prefeitura.renannardi.com',
+    origin: process.env.CORS || 'http://localhost:3000',
+    // origin: process.env.CORS || 'https://prefeitura.renannardi.com',
     credentials: true,
   });
 
   app.use(cookieParser());
 
-  await app.listen(process.env.PORT || 3000);
+  await app.listen(process.env.PORT || 4000);
 }
 bootstrap();
