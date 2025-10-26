@@ -27,7 +27,7 @@ export class AuthService {
 
     async findUserById(id: string) {
         const user = await this.prisma.user.findUnique({ 
-            where: { idUser: id },
+            where: { idUser: id, active: true },
             include: {
                 nivel_acesso: {
                     include: {

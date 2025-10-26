@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
 import { AcessoService } from './acesso.service';
 import { CreateMenuAcessoDto, CreateNivelAcessoDto, UpdateMenuAcessoDto, UpdateNivelAcessoDto, UpdateNivelMenusDto, UpdateUserNivelDto } from './dto/acesso.dto';
+import { UpdateUserStatusDto } from './dto/update-user.dto';
 
 @Controller('admin/acesso')
 export class AcessoController {
@@ -67,11 +68,19 @@ export class AcessoController {
         return this.acessoService.findUsers();
     }
 
-    @Patch('users/:id/nivel') 
+    @Patch('users/:id/nivel')
     updateUserNivel(
-        @Param('id') id: string, 
+        @Param('id') id: string,
         @Body() data: UpdateUserNivelDto,
     ) {
         return this.acessoService.updateUserNivel(id, data.nivelAcessoId);
+    }
+
+    @Patch('users/:id/status')
+    updateUserStatus(
+        @Param('id') id: string,
+        @Body() data: UpdateUserStatusDto, 
+    ) {
+        return this.acessoService.updateUserStatus(id, data.active);
     }
 }
