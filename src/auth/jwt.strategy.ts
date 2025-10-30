@@ -1,31 +1,31 @@
-// src/auth/jwt.strategy.ts
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { PrismaService } from 'src/database/prisma.service';
+import { AuthService } from './auth.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-    constructor(private prisma: PrismaService) {
+    constructor(
+        private authService: AuthService 
+    ) {
         super({
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
             ignoreExpiration: false,
-            secretOrKey: 'SECRET_KEY', // IMPORTANT: Use process.env.JWT_SECRET in production
+            secretOrKey: process.env.JWT_SECRET || 'SECRET_KEY',
         });
     }
 
     async validate(payload: { sub: string; email: string }) {
-        const user = await this.prisma.user.findUnique({
-            where: { idUser: payload.sub },
-        });
+        const user = await this.authService.findUserById(payload.sub);
 
         if (!user) {
-            throw new UnauthorizedException('User not found.');
+            throw new UnauthorizedException('Usuário não encontrado.');
         }
 
-        // The user object will be attached to the request
-        // You can remove the password before returning
-        const { password, ...result } = user;
-        return result;
+        if (!user.active) {
+            throw new UnauthorizedException('Usuário inativo.');
+        }
+
+        return user;
     }
 }

@@ -37,7 +37,7 @@ export class AuthController {
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
             path: '/',
-            maxAge: 7 * 24 * 60 * 60 * 1000, // Validade de 7 dias
+            maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
         return {
@@ -48,7 +48,6 @@ export class AuthController {
 
     @Post('logout-web')
     async logout(@Res({ passthrough: true }) response: Response) {
-        // Simplesmente limpa o cookie
         response.clearCookie('refresh_token', {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -85,7 +84,6 @@ export class AuthController {
         }
     }
 
-    // rota me para retornar o usuario logado
     @Get('me')
     async me(@Req() request: Request) {
         const token = request.cookies['refresh_token'];

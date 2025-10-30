@@ -86,7 +86,6 @@ export class AuthService {
 
     async validateToken(token: string) {
         try {
-            // throw new UnauthorizedException('Token inválido');
             return { valid: true, dataToken: this.jwtService.verify(token) };
         } catch (e) {
             throw new UnauthorizedException('Token inválido');
