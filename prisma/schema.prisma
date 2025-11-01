@@ -74,7 +74,7 @@ enum QuestionType {
 }
 
 model Form {
-  id          String     @id @default(uuid())
+  idForm          String     @id @default(uuid())
   title       String
   description String?
   questions   Question[]
@@ -84,31 +84,32 @@ model Form {
 }
 
 model Question {
-  id       String       @id @default(uuid())
+  idQuestion       String       @id @default(uuid())
   text     String
   type     QuestionType
   required Boolean      @default(false)
   order    Int
-  form     Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  form     Form         @relation(fields: [formId], references: [idForm], onDelete: Cascade)
   formId   String
   options  Option[]
   answers  Answer[]
 }
 
 model Option {
-  id         String   @id @default(uuid())
+  idOption         String   @id @default(uuid())
   text       String
+  value    Int?
   order      Int
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [idQuestion], onDelete: Cascade)
   questionId String
 }
 
 
 model Response {
-  id          String   @id @default(uuid())
+  idResponse          String   @id @default(uuid())
   submittedAt DateTime @default(now())
 
-  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  form   Form   @relation(fields: [formId], references: [idForm], onDelete: Cascade)
   formId String
 
   user   User?   @relation(fields: [userId], references: [idUser], onDelete: SetNull)
@@ -121,16 +122,16 @@ model Response {
 }
 
 model Answer {
-  id String @id @default(uuid())
+  idAnswer  String @id @default(uuid())
 
   value String?
 
   values String[]
 
-  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  response   Response @relation(fields: [responseId], references: [idResponse], onDelete: Cascade)
   responseId String
 
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [idQuestion], onDelete: Cascade)
   questionId String
 
   @@index([responseId])

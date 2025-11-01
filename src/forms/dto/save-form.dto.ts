@@ -3,11 +3,22 @@ import { IsArray, IsBoolean, IsEnum, IsOptional, IsString, ValidateNested } from
 import { QuestionType } from 'generated/prisma';
 
 class OptionDto {
+  @IsOptional()
+  @IsString()
+  idOption?: string;
+
   @IsString()
   text: string;
+
+  @IsOptional()
+  value: number;
 }
 
 class QuestionDto {
+  @IsOptional()
+  @IsString()
+  idQuestion?: string;
+
   @IsString()
   text: string;
 
@@ -35,4 +46,6 @@ export class SaveFormDto {
   @ValidateNested({ each: true })
   @Type(() => QuestionDto)
   questions: QuestionDto[];
+
+
 }
