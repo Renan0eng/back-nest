@@ -4,36 +4,36 @@ import {
     Injectable,
     UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 
 @Injectable()
 export class RefreshTokenGuard implements CanActivate {
-    constructor(
-        private jwtService: JwtService,
-        private authService: AuthService,
-    ) { }
+    constructor(private authService: AuthService) { }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest<Request>();
-        const token = request.cookies['refresh_token']; 
+        const cookieToken = request.cookies['refresh_token'];
+        const bearerToken = request.headers.authorization?.startsWith('Bearer ')
+            ? request.headers.authorization.split(' ')[1]
+            : undefined;
+        const token = bearerToken || cookieToken;
 
         if (!token) {
             throw new UnauthorizedException('Token não encontrado.');
         }
 
         try {
-            const payload = await this.jwtService.verifyAsync(token, {
-                secret: process.env.JWT_REFRESH_SECRET, 
+            const validated = await this.authService.validateToken(token, {
+                type: bearerToken ? 'access' : 'refresh',
             });
 
-            const user = await this.authService.findUserById(payload.sub);
+            const user = await this.authService.findUserById(validated.dataToken.sub);
             if (!user || !user.active) {
                 throw new UnauthorizedException('Usuário associado ao token inválido ou inativo.');
             }
 
-            request['refreshTokenPayload'] = payload;
+            request['refreshTokenPayload'] = validated.dataToken;
 
         } catch (err) {
             const response = context.switchToHttp().getResponse();

@@ -165,7 +165,7 @@ export class AuthService {
     }
 
     async loginWeb(userPayload: { idUser: string; email: string }) {
-        const payload = { email: userPayload.email, sub: userPayload.idUser };
+        const payload = { email: userPayload.email, sub: userPayload.idUser, web: true };
 
         const [accessToken, refreshToken] = await Promise.all([
             this.jwtService.signAsync(payload, {
@@ -183,6 +183,24 @@ export class AuthService {
             accessToken,
             refreshToken,
         };
+    }
+
+    async createImpersonationSession(actorId: string, targetId: string) {
+        const [actor, target] = await Promise.all([
+            this.prisma.user.findUnique({ where: { idUser: actorId } }),
+            this.findUserById(targetId),
+        ]);
+
+        if (!actor || !actor.active) throw new UnauthorizedException('Usuário principal inválido.');
+        if (!target.active || target.dt_delete) throw new BadRequestException('Não é possível acessar um usuário inativo.');
+        if (actor.idUser === target.idUser) throw new BadRequestException('Selecione outro usuário.');
+
+        const accessToken = await this.jwtService.signAsync(
+            { email: target.email, sub: target.idUser, impersonatedBy: actor.idUser },
+            { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '1h' },
+        );
+
+        return { accessToken, user: target };
     }
 
     async validateToken(

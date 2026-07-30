@@ -55,6 +55,16 @@ export class MenuPermissionGuard implements CanActivate {
         user = await this.authService.findUserByIdBasic(validated.dataToken.sub);
       }
       if (!req.user) req.user = user;
+      if (!validated.dataToken.web && !validated.dataToken.impersonatedBy) return true;
+
+      // A ação de abrir outra simulação continua pertencendo ao administrador
+      // original, mesmo quando solicitada a partir de uma aba já simulada.
+      const permissionUser = validated.dataToken.impersonatedBy && requiredSlugs.includes('logar-como')
+        ? await this.authService.findUserById(validated.dataToken.impersonatedBy)
+        : user;
+      const targetMenus = permissionUser?.nivel_acesso?.menus || [];
+      const targetAllowed = targetMenus.some((m: any) => requiredSlugs.includes(m.slug));
+      if (!targetAllowed) throw new ForbiddenException('Acesso negado para este recurso.');
       return true;
     }
 

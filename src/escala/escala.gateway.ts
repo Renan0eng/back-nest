@@ -14,6 +14,12 @@ export type EscalaChange = {
     id?: string;
 };
 
+export type CheckinReminder = {
+    id: string;
+    doctorId: string;
+    notifiedAt: string;
+};
+
 /**
  * Gateway em tempo real da Escala de Plantão.
  *
@@ -31,5 +37,9 @@ export class EscalaGateway {
     emitChange(change: EscalaChange) {
         // `server` pode não estar pronto em cenários de teste; o `?.` protege.
         this.server?.emit('escala:changed', change);
+    }
+
+    emitCheckinReminder(reminder: CheckinReminder) {
+        this.server?.emit('escala:checkin-reminder', reminder);
     }
 }

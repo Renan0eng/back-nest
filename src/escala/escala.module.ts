@@ -9,6 +9,6 @@ import { EscalaService } from './escala.service';
     imports: [DatabaseModule, AuthModule],
     controllers: [EscalaController],
     providers: [EscalaService, EscalaGateway],
-    exports: [EscalaService],
+    exports: [EscalaService, EscalaGateway],
 })
 export class EscalaModule { }

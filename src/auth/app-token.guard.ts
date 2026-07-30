@@ -22,11 +22,11 @@ export class AppTokenGuard implements CanActivate {
         let token: string | undefined
         let isBearerToken = false
 
-        token = request.cookies?.['refresh_token']
-
-        if (!token && request.headers.authorization?.startsWith('Bearer ')) {
+        if (request.headers.authorization?.startsWith('Bearer ')) {
             token = request.headers.authorization.split(' ')[1]
             isBearerToken = true
+        } else {
+            token = request.cookies?.['refresh_token']
         }
 
         if (!token) throw new UnauthorizedException('Token não encontrado.')

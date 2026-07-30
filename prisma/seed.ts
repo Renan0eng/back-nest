@@ -10,6 +10,7 @@ const MENUS = [
   { nome: 'Acessos / Permissões', slug: 'acesso' },
   { nome: 'Ativação de Usuários', slug: 'ativacao-usuarios' },
   { nome: 'Gerenciar Usuários', slug: 'gerenciar-usuarios' },
+  { nome: 'Logar como Usuário', slug: 'logar-como' },
   { nome: 'Formulários', slug: 'formulario' },
   { nome: 'Respostas de Formulários', slug: 'respostas' },
   { nome: 'Atribuição de Usuários', slug: 'atribuir-usuarios' },

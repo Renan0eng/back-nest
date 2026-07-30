@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Patch, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from 'src/auth/public.decorator';
 import { AuthService } from './auth.service';
 import { LoginUserDto } from './dto/login-user.dto';
 import { RegisterUserDto } from './dto/register-user.dto';
+import { AppTokenGuard } from './app-token.guard';
+import { Menu } from './menu.decorator';
 
 function cookieOptions(): { httpOnly: boolean; secure: boolean; sameSite: 'lax'; path: string; maxAge: number; domain?: string } {
     const opts: any = {
@@ -113,6 +115,16 @@ export class AuthController {
         return { message: 'Logout realizado com sucesso' };
     }
 
+    @Post('impersonate/:id')
+    @UseGuards(AppTokenGuard)
+    @Menu('logar-como')
+    async impersonate(@Param('id') id: string, @Req() request: Request) {
+        const tokenPayload = request['refreshTokenPayload'] as { impersonatedBy?: string } | undefined;
+        const currentUser = request['user'] as { idUser: string };
+        const actorId = tokenPayload?.impersonatedBy || currentUser.idUser;
+        return this.authService.createImpersonationSession(actorId, id);
+    }
+
     @Post('refresh')
     async refresh(
         @Req() request: Request,
@@ -149,6 +161,12 @@ export class AuthController {
         const user = await this.authService.findUserById(dataToken.dataToken.sub);
 
         return user;
+    }
+
+    @Get('me-token')
+    @UseGuards(AppTokenGuard)
+    async meToken(@Req() request: Request) {
+        return request['user'];
     }
 
     @Post('validate')

@@ -32,6 +32,11 @@ export class EscalaController {
         return this.escalaService.history(id);
     }
 
+    @Get(':id/atendimentos')
+    atendimentos(@Param('id') id: string) {
+        return this.escalaService.atendimentos(id);
+    }
+
     @Post()
     @Menu('escala-admin')
     @UsePipes(new ValidationPipe({ whitelist: true }))
@@ -71,6 +76,12 @@ export class EscalaController {
     @Post(':id/checkin')
     checkin(@Param('id') id: string, @Req() req: Request) {
         return this.escalaService.checkin(id, req.user);
+    }
+
+    @Post(':id/notificar-checkin')
+    @Menu('escala-admin')
+    notificarCheckin(@Param('id') id: string, @Req() req: Request) {
+        return this.escalaService.notifyCheckin(id, req.user);
     }
 
     @Post(':id/checkout')

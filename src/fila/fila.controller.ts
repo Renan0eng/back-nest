@@ -43,8 +43,8 @@ export class FilaController {
     }
 
     @Post(':id/concluir')
-    finish(@Param('id') id: string) {
-        return this.filaService.finish(id);
+    finish(@Param('id') id: string, @Body('attendanceId') attendanceId?: string) {
+        return this.filaService.finish(id, attendanceId);
     }
 
     @Post(':id/cancelar')

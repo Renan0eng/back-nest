@@ -52,9 +52,129 @@ export class EscalaService {
         });
     }
 
+    /**
+     * Senhas/atendimentos do plantão.
+     *
+     * Não há vínculo direto no banco: uma senha pertence ao plantão quando é do
+     * MESMO SETOR e foi GERADA enquanto o plantão estava ATIVO — ou seja, entre um
+     * check-in e o check-out/devolução do médico.
+     *
+     * Os períodos ativos são reconstruídos a partir do LOG DE EVENTOS (permanente),
+     * e não das colunas `checkinAt`/`checkoutAt` — que são zeradas ao devolver o
+     * plantão ao mercado. Assim o histórico de atendimentos NÃO some quando o
+     * plantão é devolvido, e vários ciclos de check-in/out são respeitados.
+     */
+    async atendimentos(id: string) {
+        const plantao = await this.prisma.plantao.findFirst({
+            where: { id, deletedAt: null },
+            select: { id: true, setor: true, checkinAt: true, checkoutAt: true },
+        });
+        if (!plantao) throw new NotFoundException('Plantão não encontrado.');
+
+        // Períodos ativos = intervalos entre CheckIn e o CheckOut/Devolvido/Removido seguinte.
+        // Cada intervalo guarda o SETOR que estava ativo naquele check-in (evento `detail`),
+        // para o vínculo sobreviver a edições de setor posteriores.
+        const events = await this.prisma.plantaoEvent.findMany({
+            where: { plantaoId: id },
+            select: { type: true, detail: true, createdAt: true },
+            orderBy: { createdAt: 'asc' },
+        });
+        const intervals: { start: Date; end: Date; setor: string }[] = [];
+        let open: { start: Date; setor: string } | null = null;
+        for (const e of events) {
+            if (e.type === 'CheckIn') {
+                if (open === null) open = { start: e.createdAt, setor: e.detail ?? plantao.setor };
+            } else if (e.type === 'CheckOut' || e.type === 'Devolvido' || e.type === 'Removido') {
+                if (open !== null) { intervals.push({ ...open, end: e.createdAt }); open = null; }
+            }
+        }
+        // Check-in ainda aberto (plantão em andamento) → conta até agora.
+        if (open !== null) intervals.push({ ...open, end: new Date() });
+        // Fallback p/ dados sem eventos de check-in mas com a coluna preenchida.
+        if (intervals.length === 0 && plantao.checkinAt) {
+            intervals.push({ start: plantao.checkinAt, end: plantao.checkoutAt ?? new Date(), setor: plantao.setor });
+        }
+        if (intervals.length === 0) return [];
+
+        const windowStart = intervals.reduce((min, iv) => (iv.start < min ? iv.start : min), intervals[0].start);
+        const windowEnd = intervals.reduce((max, iv) => (iv.end > max ? iv.end : max), intervals[0].end);
+        const setores = Array.from(new Set(intervals.map((iv) => iv.setor)));
+
+        const tickets = await this.prisma.queueTicket.findMany({
+            where: {
+                setor: { in: setores },
+                dt_delete: null,
+                issuedAt: { gte: windowStart, lte: windowEnd },
+            },
+            include: {
+                patient: { select: { idUser: true, name: true } },
+                doctor: { select: { idUser: true, name: true } },
+                attendance: {
+                    select: {
+                        id: true, diagnosis: true, treatment: true, chiefComplaint: true,
+                        status: true, createdAt: true, updatedAt: true,
+                    },
+                },
+            },
+            orderBy: { issuedAt: 'asc' },
+        });
+
+        // Mantém só as senhas geradas dentro de algum período ativo E no setor que
+        // estava ativo naquele período (imune a edições de setor posteriores).
+        return tickets.filter((t) => intervals.some((iv) => t.setor === iv.setor && t.issuedAt >= iv.start && t.issuedAt <= iv.end)).map((t) => {
+            const waitEnd = t.calledAt ?? t.confirmedAt;
+            const waitMs = waitEnd ? waitEnd.getTime() - t.issuedAt.getTime() : null;
+            const consultStart = t.confirmedAt ?? t.calledAt;
+            const consultMs = consultStart && t.closedAt ? t.closedAt.getTime() - consultStart.getTime() : null;
+            return {
+                id: t.id,
+                code: t.code,
+                patientName: t.patient?.name ?? t.patientName ?? 'Paciente',
+                doctorName: t.doctor?.name ?? null,
+                setor: t.setor,
+                status: t.status,
+                attendanceId: t.attendanceId,
+                issuedAt: t.issuedAt,
+                calledAt: t.calledAt,
+                confirmedAt: t.confirmedAt,
+                closedAt: t.closedAt,
+                waitSeconds: waitMs != null ? Math.round(waitMs / 1000) : null,
+                consultSeconds: consultMs != null ? Math.round(consultMs / 1000) : null,
+                attendance: t.attendance,
+            };
+        });
+    }
+
     /** Usuário cujo nível possui o menu escala-admin. */
     private isEscalaAdmin(user: any): boolean {
         return (user?.nivel_acesso?.menus || []).some((m: any) => m?.slug === 'escala-admin');
+    }
+
+    /** Admin da escala pode solicitar novamente o check-in de um plantão atrasado. */
+    async notifyCheckin(id: string, user?: any) {
+        if (!this.isEscalaAdmin(user)) {
+            throw new ForbiddenException('Apenas o Escala de Plantão Admin pode solicitar check-in.');
+        }
+
+        const plantao = await this.findOne(id);
+        const now = new Date();
+        if (!plantao.doctorId || plantao.status !== 'Agendado' || now < plantao.startsAt || now >= plantao.endsAt) {
+            throw new BadRequestException('Este plantão não está aguardando check-in.');
+        }
+
+        await this.logEvent(
+            id,
+            'NotificacaoCheckIn',
+            user,
+            'Solicitou check-in ao médico atribuído',
+        );
+        this.gateway.emitCheckinReminder({
+            id,
+            doctorId: plantao.doctorId,
+            notifiedAt: now.toISOString(),
+        });
+
+        return { message: 'Solicitação de check-in enviada.', notifiedAt: now.toISOString() };
     }
 
     /** Check-in, check-out e devolução só pelo próprio médico do plantão ou por um admin da escala. */
@@ -225,7 +345,9 @@ export class EscalaService {
             where: { id },
             data: { checkinAt: new Date(), status: 'EmAndamento' },
             include: doctorInclude,
-        }), { event: 'CheckIn', user, change: 'updated' });
+        // Grava o setor ATIVO no check-in: editar o setor depois não desvincula os
+        // atendimentos deste período (o vínculo é por setor-no-momento-do-check-in).
+        }), { event: 'CheckIn', user, detail: plantao.setor, change: 'updated' });
     }
 
     async checkout(id: string, user?: any) {

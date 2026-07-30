@@ -374,6 +374,7 @@ model Attendance {
   medicalNotes        MedicalNote[]
   examRequests        ExamRequest[]
   returnAppointments  Appointment[]    @relation("AppointmentOriginAttendance")
+  queueTickets        QueueTicket[]    @relation("QueueAttendance")
 
   @@index([appointmentId])
   @@index([patientId])
@@ -845,6 +846,7 @@ enum PlantaoEventType {
   Editado
   CheckIn
   CheckOut
+  NotificacaoCheckIn
   Removido
   Restaurado
 }
@@ -876,6 +878,7 @@ model QueueTicket {
   status        QueueStatus   @default(Aguardando)
   doctorId      String? // User id do médico que assumiu
   appointmentId String? // agendamento de origem (opcional — senha pode ser avulsa)
+  attendanceId  String? // atendimento criado a partir desta senha (preenchido ao concluir)
   issuedAt      DateTime      @default(now())
   calledAt      DateTime?
   confirmedAt   DateTime?
@@ -886,11 +889,13 @@ model QueueTicket {
   doctor      User?        @relation("QueueDoctor", fields: [doctorId], references: [idUser])
   grupo       Grupo?       @relation("QueueGrupo", fields: [grupoId], references: [idGrupo])
   appointment Appointment? @relation("QueueAppointment", fields: [appointmentId], references: [id])
+  attendance  Attendance?  @relation("QueueAttendance", fields: [attendanceId], references: [id])
 
   @@index([grupoId])
   @@index([status])
   @@index([issuedAt])
   @@index([appointmentId])
+  @@index([attendanceId])
 }
 
 /// Insumo de estoque hospitalar.

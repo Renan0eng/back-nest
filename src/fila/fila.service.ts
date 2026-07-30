@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { QueueStatus } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
+import { EscalaGateway } from 'src/escala/escala.gateway';
 import { CallTicketDto, CreateTicketDto } from './dto/fila.dto';
 
 const ticketInclude = {
@@ -14,7 +15,17 @@ const PREFIX: Record<string, string> = { Normal: 'N', Preferencial: 'P', Urgenci
 
 @Injectable()
 export class FilaService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService, private escalaGateway: EscalaGateway) { }
+
+    /**
+     * Sinaliza a mudança para os cards de plantão abertos (fixo/flutuante), que
+     * reagem ao `escala:changed` refazendo o fetch dos atendimentos. Sem isso, o
+     * histórico de atendimentos do plantão não atualizava em tempo real ao concluir
+     * uma senha. Best-effort: nunca deixa a falha do socket quebrar a operação.
+     */
+    private notifyEscala() {
+        try { this.escalaGateway.emitChange({ type: 'updated' }); } catch { /* ignore */ }
+    }
 
     findAll(status?: QueueStatus, grupoId?: number, deleted = false) {
         return this.prisma.queueTicket.findMany({
@@ -89,7 +100,7 @@ export class FilaService {
         const priority = dto.priority ?? 'Normal';
         const code = await this.nextCode(priority);
 
-        return this.prisma.queueTicket.create({
+        const ticket = await this.prisma.queueTicket.create({
             data: {
                 code,
                 setor: dto.setor,
@@ -102,64 +113,82 @@ export class FilaService {
             },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return ticket;
     }
 
     async call(id: string, dto: CallTicketDto) {
         const ticket = await this.get(id);
         if (ticket.status !== 'Aguardando') throw new BadRequestException('Esta senha não está aguardando.');
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
             data: { status: 'Chamado', calledAt: new Date(), doctorId: dto.doctorId ?? null },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
     async confirm(id: string) {
         const ticket = await this.get(id);
         if (ticket.status !== 'Chamado') throw new BadRequestException('Só é possível confirmar uma senha chamada.');
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
             data: { status: 'EmAtendimento', confirmedAt: new Date() },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
-    async finish(id: string) {
+    async finish(id: string, attendanceId?: string) {
         await this.get(id);
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
-            data: { status: 'Concluido', closedAt: new Date() },
+            data: {
+                status: 'Concluido',
+                closedAt: new Date(),
+                ...(attendanceId ? { attendanceId } : {}),
+            },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
     async cancel(id: string) {
         await this.get(id);
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
             data: { status: 'Cancelado', closedAt: new Date() },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
     async miss(id: string) {
         await this.get(id);
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
             data: { status: 'Faltou', closedAt: new Date() },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
     /** Soft delete de uma senha. */
     async remove(id: string) {
         const ticket = await this.get(id);
         if (ticket.dt_delete) throw new BadRequestException('Esta senha já está excluída.');
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
             data: { dt_delete: new Date() },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
     /**
@@ -187,11 +216,13 @@ export class FilaService {
             }
         }
 
-        return this.prisma.queueTicket.update({
+        const updated = await this.prisma.queueTicket.update({
             where: { id },
             data: { dt_delete: null },
             include: ticketInclude,
         });
+        this.notifyEscala();
+        return updated;
     }
 
     private async get(id: string) {
