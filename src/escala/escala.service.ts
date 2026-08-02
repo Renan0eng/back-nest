@@ -150,6 +150,13 @@ export class EscalaService {
         return (user?.nivel_acesso?.menus || []).some((m: any) => m?.slug === 'escala-admin');
     }
 
+    async logQueueNotification(plantaoId: string, detail: string) {
+        await this.prisma.plantaoEvent.create({
+            data: { plantaoId, type: 'NotificacaoFila', actorName: 'Fila de Atendimento', actorRole: 'Notificação', detail },
+        });
+        this.gateway.emitChange({ type: 'updated', id: plantaoId });
+    }
+
     /** Admin da escala pode solicitar novamente o check-in de um plantão atrasado. */
     async notifyCheckin(id: string, user?: any) {
         if (!this.isEscalaAdmin(user)) {

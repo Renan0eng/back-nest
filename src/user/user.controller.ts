@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { AuthService } from 'src/auth/auth.service';
 import { Menu } from 'src/auth/menu.decorator';
 import { RefreshTokenGuard } from 'src/auth/refresh-token.guard';
@@ -16,8 +17,8 @@ export class UserController {
 
     @Post()
     @UseGuards(RefreshTokenGuard)
-    create(@Body() createUserDto: CreateUserDto) {
-        return this.userService.create(createUserDto);
+    create(@Body() createUserDto: CreateUserDto, @Req() req: Request) {
+        return this.userService.create(createUserDto, (req.user as any)?.idUser);
     }
 
     @Get()

@@ -20,6 +20,14 @@ export type CheckinReminder = {
     notifiedAt: string;
 };
 
+export type QueueNotification = {
+    doctorId: string;
+    ticketId: string;
+    code: string;
+    status: string;
+    setor: string;
+};
+
 /**
  * Gateway em tempo real da Escala de Plantão.
  *
@@ -41,5 +49,9 @@ export class EscalaGateway {
 
     emitCheckinReminder(reminder: CheckinReminder) {
         this.server?.emit('escala:checkin-reminder', reminder);
+    }
+
+    emitQueueNotification(notification: QueueNotification) {
+        this.server?.emit('fila:notificacao', notification);
     }
 }

@@ -67,6 +67,9 @@ export class PublicPatientService {
         data,
         select: patientSelect,
       });
+      if (grupoPadrao) {
+        await this.prisma.grupo_Membro.create({ data: { grupoId: grupoPadrao.idGrupo, userId: created.idUser } });
+      }
       return created;
     } catch (e: any) {
       // Unique constraint or other errors

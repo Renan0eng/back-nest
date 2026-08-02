@@ -18,30 +18,36 @@ export class AuthService {
         return bcrypt.hash(password, 10);
     }
 
-    async createUser(data: Prisma.UserCreateInput) {
+    async createUser(data: Prisma.UserCreateInput, createdById?: string) {
         const user = await this.prisma.user.create({
             data: ({
                 ...(data as any),
                 password: await this.cryptPassword(data.password),
             } as any),
         });
+        await this.assignUserToGroups(user.idUser, (data as any).type, createdById);
         return user;
     }
 
-    async createUserMobile(data: any) {
-        const { grupoId, ...userData } = data;
-
-        if (grupoId && userData.type === 'PACIENTE') {
-            userData.grupoPacienteId = grupoId;
+    private async assignUserToGroups(userId: string, type?: string, createdById?: string) {
+        let groupIds: number[] = [];
+        if (createdById) {
+            const memberships = await this.prisma.grupo_Membro.findMany({ where: { userId: createdById }, select: { grupoId: true } });
+            groupIds = memberships.map(m => m.grupoId);
         }
+        if (!groupIds.length) {
+            const defaultGroup = await this.prisma.grupo.findFirst({ where: { isDefault: true }, select: { idGrupo: true } });
+            if (defaultGroup) groupIds = [defaultGroup.idGrupo];
+        }
+        if (!groupIds.length) return;
+        await this.prisma.grupo_Membro.createMany({ data: groupIds.map(grupoId => ({ grupoId, userId })), skipDuplicates: true });
+        if (type === 'PACIENTE') await this.prisma.user.update({ where: { idUser: userId }, data: { grupoPacienteId: groupIds[0] } });
+    }
+
+    async createUserMobile(data: any) {
+        const { grupoId: _ignoredGrupoId, ...userData } = data;
 
         const user = await this.createUser(userData);
-
-        if (grupoId) {
-            await this.prisma.grupo_Membro.create({
-                data: { grupoId: Number(grupoId), userId: user.idUser },
-            }).catch(() => {});
-        }
 
         const { password: _, ...userWithoutPassword } = user;
         const access_token = this.jwtService.sign({

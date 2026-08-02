@@ -83,6 +83,8 @@ model User {
   // Groups
   gruposMembro  Grupo_Membro[]
   gruposCriados Grupo[] @relation("GrupoCreator")
+  filaNotificacoes FilaNotificacaoUsuario[]
+  afiliacoesSolicitadas GrupoAfiliacao[] @relation("GrupoAfiliacaoSolicitante")
   formsCriados  Form[]  @relation("FormCreator")
 
   // Grupo ao qual o paciente pertence (para escopo de visualização)
@@ -651,6 +653,9 @@ model Grupo {
   plantoes     Plantao[]     @relation("PlantaoGrupo")
   queueTickets QueueTicket[] @relation("QueueGrupo")
   supplies     Supply[]      @relation("SupplyGrupo")
+  filaNotificacoes FilaNotificacaoGrupo[]
+  afiliacoesEnviadas GrupoAfiliacao[] @relation("GrupoAfiliacaoOrigem")
+  afiliacoesRecebidas GrupoAfiliacao[] @relation("GrupoAfiliacaoDestino")
 
   @@index([createdById])
   @@index([isDefault])
@@ -847,6 +852,7 @@ enum PlantaoEventType {
   CheckIn
   CheckOut
   NotificacaoCheckIn
+  NotificacaoFila
   Removido
   Restaurado
 }
@@ -864,6 +870,58 @@ enum QueueStatus {
   Concluido
   Cancelado
   Faltou
+}
+
+enum GrupoAfiliacaoStatus {
+  Pendente
+  Ativa
+  Recusada
+  Encerrada
+}
+
+model GrupoAfiliacao {
+  id              Int                  @id @default(autoincrement())
+  origemId        Int
+  destinoId       Int
+  status          GrupoAfiliacaoStatus @default(Pendente)
+  solicitadoPorId String?
+  criadoEm        DateTime             @default(now())
+  atualizadoEm    DateTime             @updatedAt
+  respondidoEm    DateTime?
+
+  origem        Grupo @relation("GrupoAfiliacaoOrigem", fields: [origemId], references: [idGrupo], onDelete: Cascade)
+  destino       Grupo @relation("GrupoAfiliacaoDestino", fields: [destinoId], references: [idGrupo], onDelete: Cascade)
+  solicitadoPor User? @relation("GrupoAfiliacaoSolicitante", fields: [solicitadoPorId], references: [idUser], onDelete: SetNull)
+
+  @@unique([origemId, destinoId])
+  @@index([origemId, status])
+  @@index([destinoId, status])
+}
+
+model FilaNotificacaoGrupo {
+  id        Int         @id @default(autoincrement())
+  grupoId   Int
+  status    QueueStatus
+  ativo     Boolean     @default(false)
+  updatedAt DateTime    @updatedAt
+
+  grupo Grupo @relation(fields: [grupoId], references: [idGrupo], onDelete: Cascade)
+
+  @@unique([grupoId, status])
+  @@index([grupoId, ativo])
+}
+
+model FilaNotificacaoUsuario {
+  id        Int         @id @default(autoincrement())
+  userId    String
+  status    QueueStatus
+  ativo     Boolean     @default(false)
+  updatedAt DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [idUser], onDelete: Cascade)
+
+  @@unique([userId, status])
+  @@index([userId, ativo])
 }
 
 /// Senha/ticket da fila de atendimento.

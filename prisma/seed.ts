@@ -32,6 +32,7 @@ const MENUS = [
   { nome: 'Escala de Plantão', slug: 'escala' },
   { nome: 'Escala de Plantão Admin', slug: 'escala-admin' },
   { nome: 'Fila de Atendimento', slug: 'fila' },
+  { nome: 'Fila de Atendimento Notificações', slug: 'fila-notificacoes' },
   { nome: 'Estoque de Insumos', slug: 'estoque' },
 ];
 
@@ -64,6 +65,7 @@ const NIVEL_SLUGS: Record<number, string[]> = {
     'escala',
     'escala-admin',
     'fila',
+    'fila-notificacoes',
     'estoque',
     'atendimento',
     'atendimento-ia',
@@ -92,6 +94,7 @@ const NIVEL_SLUGS: Record<number, string[]> = {
     'esteira-pacientes',
     'escala',
     'fila',
+    'fila-notificacoes',
     'atendimento',
     'atendimento-ia',
   ],
@@ -230,6 +233,25 @@ async function migrarPacientesAppParaGrupoPadrao(grupoId: number) {
     data: { grupoPacienteId: grupoId },
   });
   console.log(`  ${result.count} pacientes movidos para o grupo padrão`);
+}
+
+async function vincularUsuariosSemGrupoAoPadrao(grupoId: number) {
+  console.log('Vinculando usuários sem grupo ao Grupo Padrão...');
+  const users = await prisma.user.findMany({
+    where: { dt_delete: null, gruposMembro: { none: {} } },
+    select: { idUser: true, type: true, grupoPacienteId: true },
+  });
+  if (users.length) {
+    await prisma.grupo_Membro.createMany({
+      data: users.map(user => ({ grupoId, userId: user.idUser })),
+      skipDuplicates: true,
+    });
+    await prisma.user.updateMany({
+      where: { idUser: { in: users.filter(user => user.type === 'PACIENTE' && !user.grupoPacienteId).map(user => user.idUser) } },
+      data: { grupoPacienteId: grupoId },
+    });
+  }
+  console.log(`  ${users.length} usuário(s) vinculados ao Grupo Padrão`);
 }
 
 async function seedTriagemForm(grupoId: number) {
@@ -443,6 +465,7 @@ async function main() {
   await seedPermissoes();
   await seedAdminUser();
   const grupoPadraoId = await seedGrupoPadrao();
+  await vincularUsuariosSemGrupoAoPadrao(grupoPadraoId);
   await seedTriagemForm(grupoPadraoId);
   await migrarPacientesAppParaGrupoPadrao(grupoPadraoId);
 

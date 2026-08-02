@@ -20,6 +20,12 @@ const membroInclude = {
     },
 };
 
+const afiliacaoInclude = {
+    origem: { select: { idGrupo: true, nome: true } },
+    destino: { select: { idGrupo: true, nome: true } },
+    solicitadoPor: { select: { idUser: true, name: true, email: true } },
+};
+
 @Injectable()
 export class GruposService {
     constructor(private prisma: PrismaService) { }
@@ -29,6 +35,10 @@ export class GruposService {
             include: membroInclude,
             orderBy: { nome: 'asc' },
         });
+    }
+
+    async findAffiliations() {
+        return this.prisma.grupoAfiliacao.findMany({ include: afiliacaoInclude, orderBy: { criadoEm: 'desc' } });
     }
 
     async findOne(idGrupo: number) {
@@ -95,6 +105,47 @@ export class GruposService {
         return this.findOne(idGrupo);
     }
 
+    async moveMembro(idGrupo: number, userId: string) {
+        await this.findOne(idGrupo);
+        await this.prisma.$transaction([
+            this.prisma.grupo_Membro.deleteMany({ where: { userId } }),
+            this.prisma.grupo_Membro.create({ data: { grupoId: idGrupo, userId } }),
+        ]);
+        return this.findOne(idGrupo);
+    }
+
+    async requestAffiliation(origemId: number, destinoId: number, solicitadoPorId?: string) {
+        if (origemId === destinoId) throw new BadRequestException('Um grupo não pode se afiliar a ele mesmo.');
+        const [origem, destino] = await Promise.all([
+            this.prisma.grupo.findUnique({ where: { idGrupo: origemId } }),
+            this.prisma.grupo.findUnique({ where: { idGrupo: destinoId } }),
+        ]);
+        if (!origem || !destino) throw new NotFoundException('Grupo de afiliação não encontrado.');
+        const existing = await this.prisma.grupoAfiliacao.findFirst({ where: { OR: [{ origemId, destinoId }, { origemId: destinoId, destinoId: origemId }], status: { in: ['Pendente', 'Ativa'] } } });
+        if (existing) throw new BadRequestException('Já existe uma solicitação ou afiliação entre esses grupos.');
+        return this.prisma.grupoAfiliacao.create({ data: { origemId, destinoId, solicitadoPorId }, include: afiliacaoInclude });
+    }
+
+    async updateAffiliation(id: number, status: 'Ativa' | 'Recusada' | 'Encerrada') {
+        const affiliation = await this.prisma.grupoAfiliacao.findUnique({ where: { id } });
+        if (!affiliation) throw new NotFoundException('Afiliação não encontrada.');
+        return this.prisma.grupoAfiliacao.update({ where: { id }, data: { status, respondidoEm: new Date() }, include: afiliacaoInclude });
+    }
+
+    private async expandAffiliatedGroups(groupIds: number[]): Promise<number[]> {
+        const known = new Set(groupIds);
+        let frontier = [...known];
+        while (frontier.length) {
+            const links = await this.prisma.grupoAfiliacao.findMany({ where: { status: 'Ativa', OR: [{ origemId: { in: frontier } }, { destinoId: { in: frontier } }] }, select: { origemId: true, destinoId: true } });
+            const next: number[] = [];
+            for (const link of links) {
+                for (const id of [link.origemId, link.destinoId]) if (!known.has(id)) { known.add(id); next.push(id); }
+            }
+            frontier = next;
+        }
+        return [...known];
+    }
+
     /**
      * Calcula o escopo de visibilidade de dados para um usuário.
      * Retorna null quando o usuário vê tudo (Admin / Admin Prefeitura),
@@ -110,7 +161,7 @@ export class GruposService {
             where: { userId: user.idUser },
             select: { grupoId: true },
         });
-        const groupIds = memberships.map(m => m.grupoId);
+        const groupIds = await this.expandAffiliatedGroups(memberships.map(m => m.grupoId));
 
         let visibleUserIds: string[];
         if (!groupIds.length) {
@@ -140,7 +191,7 @@ export class GruposService {
 
         if (!memberships.length) return [userId];
 
-        const grupoIds = memberships.map(m => m.grupoId);
+        const grupoIds = await this.expandAffiliatedGroups(memberships.map(m => m.grupoId));
         const membros = await this.prisma.grupo_Membro.findMany({
             where: { grupoId: { in: grupoIds } },
             select: { userId: true },

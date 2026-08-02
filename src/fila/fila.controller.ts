@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Request } from 'express';
 import { QueueStatus } from '@prisma/client';
 import { Menu } from 'src/auth/menu.decorator';
 import { RefreshTokenGuard } from 'src/auth/refresh-token.guard';
@@ -10,6 +11,26 @@ import { FilaService } from './fila.service';
 @Menu('fila')
 export class FilaController {
     constructor(private readonly filaService: FilaService) { }
+
+    @Get('notificacoes/config')
+    @Menu('fila-notificacoes')
+    notificationConfig(@Req() req: Request) {
+        return this.filaService.notificationConfig(req.user as any);
+    }
+
+    @Put('notificacoes/grupo')
+    @Menu('fila-notificacoes')
+    @UsePipes(new ValidationPipe({ whitelist: true }))
+    setGroupNotification(@Req() req: Request, @Body() body: { status: QueueStatus; ativo: boolean }) {
+        return this.filaService.setGroupNotification(req.user as any, body.status, body.ativo);
+    }
+
+    @Put('notificacoes/pessoal')
+    @Menu('fila-notificacoes')
+    @UsePipes(new ValidationPipe({ whitelist: true }))
+    setPersonalNotification(@Req() req: Request, @Body() body: { status: QueueStatus; ativo: boolean }) {
+        return this.filaService.setPersonalNotification(req.user as any, body.status, body.ativo);
+    }
 
     @Get()
     findAll(
@@ -27,8 +48,8 @@ export class FilaController {
 
     @Post()
     @UsePipes(new ValidationPipe({ whitelist: true }))
-    create(@Body() dto: CreateTicketDto) {
-        return this.filaService.create(dto);
+    create(@Body() dto: CreateTicketDto, @Req() req: Request) {
+        return this.filaService.create(dto, req.user as any);
     }
 
     @Post(':id/chamar')

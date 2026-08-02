@@ -16,9 +16,24 @@ export class GruposController {
         return this.gruposService.findAll();
     }
 
+    @Get('afiliacoes/lista')
+    findAffiliations() {
+        return this.gruposService.findAffiliations();
+    }
+
     @Get(':id')
     findOne(@Param('id', ParseIntPipe) id: number) {
         return this.gruposService.findOne(id);
+    }
+
+    @Post(':id/afiliacoes')
+    requestAffiliation(@Param('id', ParseIntPipe) id: number, @Body('destinoId', ParseIntPipe) destinoId: number, @Req() req: Request) {
+        return this.gruposService.requestAffiliation(id, destinoId, (req.user as any)?.idUser);
+    }
+
+    @Put('afiliacoes/:id')
+    updateAffiliation(@Param('id', ParseIntPipe) id: number, @Body('status') status: 'Ativa' | 'Recusada' | 'Encerrada') {
+        return this.gruposService.updateAffiliation(id, status);
     }
 
     @Post()
@@ -48,5 +63,10 @@ export class GruposController {
     @Delete(':id/membros/:userId')
     removeMembro(@Param('id', ParseIntPipe) id: number, @Param('userId') userId: string) {
         return this.gruposService.removeMembro(id, userId);
+    }
+
+    @Put(':id/membros/:userId/mover')
+    moveMembro(@Param('id', ParseIntPipe) id: number, @Param('userId') userId: string) {
+        return this.gruposService.moveMembro(id, userId);
     }
 }

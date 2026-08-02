@@ -32,7 +32,7 @@ const userSelect = Prisma.validator<Prisma.UserSelect>()({
 export class UserService {
     constructor(private prisma: PrismaService) { }
 
-    async create(createUserDto: CreateUserDto) {
+    async create(createUserDto: CreateUserDto, createdById?: string) {
         const { password, ...userData } = createUserDto;
 
         // Verifica email duplicado
@@ -58,6 +58,7 @@ export class UserService {
                 },
                 select: userSelect, // Usa a seleção para não retornar a senha
             });
+            await this.assignUserToGroups(newUser.idUser, createUserDto.type, createdById);
             return newUser;
         } catch (error) {
             // Tratamento genérico para outros erros do Prisma
@@ -70,6 +71,21 @@ export class UserService {
             console.error("Erro ao criar usuário:", error);
             throw new BadRequestException('Não foi possível criar o usuário.');
         }
+    }
+
+    private async assignUserToGroups(userId: string, type?: any, createdById?: string) {
+        let groupIds: number[] = [];
+        if (createdById) {
+            const memberships = await this.prisma.grupo_Membro.findMany({ where: { userId: createdById }, select: { grupoId: true } });
+            groupIds = memberships.map(m => m.grupoId);
+        }
+        if (!groupIds.length) {
+            const defaultGroup = await this.prisma.grupo.findFirst({ where: { isDefault: true }, select: { idGrupo: true } });
+            if (defaultGroup) groupIds = [defaultGroup.idGrupo];
+        }
+        if (!groupIds.length) return;
+        await this.prisma.grupo_Membro.createMany({ data: groupIds.map(grupoId => ({ grupoId, userId })), skipDuplicates: true });
+        if (type === 'PACIENTE') await this.prisma.user.update({ where: { idUser: userId }, data: { grupoPacienteId: groupIds[0] } });
     }
 
     async findAll(opts?: { page?: number; pageSize?: number; filters?: any }) {
