@@ -5,6 +5,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { AttendancesModule } from './attendances/attendances.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
+import { CampanhasModule } from './campanhas/campanhas.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { DatabaseModule } from './database/database.module';
 import { EscalaModule } from './escala/escala.module';
@@ -21,7 +22,7 @@ import { PushModule } from './push/push.module';
 import { UserModule } from './user/user.module';
 
 @Module({
-  imports: [AuthModule, DatabaseModule, FormModule, AcessoModule, UserModule, AppointmentsModule, AttendancesModule, PatientsModule, LogsModule, NotificationsModule, PushModule, AdminDashboardModule, ChatModule, GruposModule, MedicosModule, EscalaModule, FilaModule, EstoqueModule, ExamRequestsModule],
+  imports: [AuthModule, DatabaseModule, FormModule, AcessoModule, UserModule, AppointmentsModule, AttendancesModule, PatientsModule, LogsModule, NotificationsModule, PushModule, AdminDashboardModule, ChatModule, CampanhasModule, GruposModule, MedicosModule, EscalaModule, FilaModule, EstoqueModule, ExamRequestsModule],
   providers: [AllExceptionsFilter],
 })
 export class AppModule {}
