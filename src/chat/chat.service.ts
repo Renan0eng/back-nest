@@ -113,15 +113,25 @@ export class ChatService {
     chatId: string,
     userId: string,
     dto: CreateMessageDto,
+    attachments: Express.Multer.File[] = [],
   ) {
     const startTime = Date.now();
+    const allowedAttachmentTypes = new Set([
+      'application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain', 'text/csv', 'application/json',
+    ]);
+    const invalidAttachment = attachments.find((file) => !file.mimetype.startsWith('image/') && !allowedAttachmentTypes.has(file.mimetype));
+    if (invalidAttachment) {
+      throw new BadRequestException(`Tipo de arquivo não suportado: ${invalidAttachment.originalname}`);
+    }
     const chat = await this.getChat(chatId, userId);
 
     const userMessage = await this.prisma.message.create({
       data: {
         chatId,
         role: 'USER',
-        content: dto.content,
+        content: `${dto.content}${attachments.length ? `\n[Anexos usados nesta mensagem: ${attachments.map((file) => file.originalname).join(', ')}]` : ''}`,
       },
     });
 
@@ -163,7 +173,7 @@ export class ChatService {
         temperature: promptConfig?.temperature || 0.7,
         maxTokens: promptConfig?.maxTokens || 2048,
         triggers: trigger ? [trigger] : [],
-      });
+      }, attachments);
     } catch (error: any) {
       await this.logChat({
         chatId,
@@ -178,6 +188,7 @@ export class ChatService {
     }
 
     let createdForm: Form | null = null;
+    let createdForms: Form[] = [];
     let processedMarker: string | null = null;
     if (trigger && promptConfig?.markers && promptConfig.markers.length > 0) {
       for (const marker of promptConfig.markers) {
@@ -197,19 +208,29 @@ export class ChatService {
 
           try {
             if (marker === 'GERAR-FORM-159753') {
-              createdForm = await this.processFormCreation(openaiResponse, marker);
-              if (createdForm) {
-                openaiResponse = `✅ Formulário criado com sucesso!\n\n📋 **${createdForm.title}**\n\nO formulário foi salvo no sistema e já está disponível para uso.\n\n🔗 **Editar formulário:** ${process.env.CORS || 'http://localhost:3001'}/admin/criar-formulario/${createdForm.idForm}`;
+              createdForms = await this.processFormCreation(openaiResponse, marker, userId);
+              createdForm = createdForms[0] || null;
+              if (createdForms.length) {
+                const formsList = createdForms.map((form, index) => `${index + 1}. **${form.title}**\n🔗 ${process.env.CORS || 'http://localhost:3001'}/admin/criar-formulario/${form.idForm}`).join('\n\n');
+                openaiResponse = `✅ ${createdForms.length} formulário(s) criado(s) com sucesso!\n\n${formsList}`;
                 await this.logChat({
                   chatId, userId,
                   type: ChatLogType.ACTION_SUCCESS,
                   triggerName: trigger.name, marker,
-                  actionResult: `Formulário criado: ${createdForm.title} (${createdForm.idForm})`,
+                  actionResult: `Formulários criados: ${createdForms.map((form) => `${form.title} (${form.idForm})`).join(', ')}`,
+                });
+              } else {
+                openaiResponse = '❌ Não foi possível validar os dados do formulário gerado. Nenhum formulário foi criado; tente novamente.';
+                await this.logChat({
+                  chatId, userId,
+                  type: ChatLogType.ACTION_ERROR,
+                  triggerName: trigger.name, marker,
+                  errorMessage: 'O JSON do formulário não pôde ser extraído ou validado.',
                 });
               }
             }
             if (marker === 'GERAR-PATIENTE-159753') {
-              const patientResult = await this.processPatientCreation(openaiResponse, marker);
+              const patientResult = await this.processPatientCreation(openaiResponse, marker, userId);
               openaiResponse = patientResult.message;
               await this.logChat({
                 chatId, userId,
@@ -241,7 +262,7 @@ export class ChatService {
               }
             }
             if (marker === 'GERAR-USUARIO-159753') {
-              const userResult = await this.processUserCreation(openaiResponse, marker);
+              const userResult = await this.processUserCreation(openaiResponse, marker, userId);
               openaiResponse = userResult.message;
               await this.logChat({
                 chatId, userId,
@@ -300,6 +321,7 @@ export class ChatService {
       userMessage,
       assistantMessage,
       createdForm,
+      createdForms,
     };
   }
 
@@ -324,16 +346,107 @@ export class ChatService {
     return { success: true };
   }
 
+  /**
+   * Assistente isolado do construtor. Ele nunca grava no banco: devolve uma
+   * proposta que o usuário ainda precisa conferir e salvar no editor.
+   */
+  async assistFormBuilder(
+    command: string,
+    form: unknown,
+    attachments: Express.Multer.File[] = [],
+  ): Promise<{ content: string; proposal: unknown | null }> {
+    if (!command?.trim()) throw new BadRequestException('Informe um comando para a IA.');
+    if (!form || typeof form !== 'object') throw new BadRequestException('O rascunho do formulário é inválido.');
+
+    const allowedAttachmentTypes = new Set([
+      'application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain', 'text/csv', 'application/json',
+    ]);
+    const invalidAttachment = attachments.find((file) => !file.mimetype.startsWith('image/') && !allowedAttachmentTypes.has(file.mimetype));
+    if (invalidAttachment) throw new BadRequestException(`Tipo de arquivo não suportado: ${invalidAttachment.originalname}`);
+
+    const systemPrompt = `Você é o assistente de edição de formulários clínicos. Responda em português e devolva SOMENTE JSON válido, sem markdown, no formato {"message":"resumo curto","form":{...}}. O campo form deve ser o formulário completo após aplicar o comando. Preserve idQuestion e idOption existentes sempre que a pergunta/opção for mantida. Use apenas MULTIPLE_CHOICE, CHECKBOXES, SHORT_TEXT ou PARAGRAPH. Perguntas de texto livre têm options: []. Para novas perguntas ou opções, use ids vazios; a interface gera os ids. Não invente diagnósticos nem afirme que o formulário substitui avaliação profissional.`;
+    const response = await this.callOpenAI(
+      [{ role: 'USER', content: `FORMULÁRIO ATUAL:\n${JSON.stringify(form)}\n\nCOMANDO:\n${command}` }],
+      { systemPrompt, temperature: 0.3, maxTokens: 8192, model: 'gpt-4o-mini', triggers: [], jsonObject: true, allowLargeOutput: true },
+      attachments,
+    );
+
+    try {
+      const json = this.extractJsonValue(response);
+      const parsed = json ? JSON.parse(this.sanitizeAiJson(json)) : null;
+      return { content: parsed?.message || 'Sugestão aplicada ao rascunho.', proposal: parsed?.form || parsed?.formulario || null };
+    } catch {
+      return { content: response, proposal: null };
+    }
+  }
+
   private async callOpenAI(
     messages: any[],
     promptConfig: FinalPromptConfig | any,
+    attachments: Express.Multer.File[] = [],
   ): Promise<string> {
     const conversationMessages = messages.map((msg) => ({
       role: msg.role === 'USER' ? 'user' : 'assistant',
       content: msg.content,
     }));
+    const isPatientCreation = promptConfig.triggers?.some((trigger: any) => trigger.triggerId === 'patient-creation');
+    const isFormCreation = promptConfig.triggers?.some((trigger: any) => trigger.triggerId === 'form-creation');
+    const patientCreationRules = isPatientCreation
+      ? `\n\nREGRA CRÍTICA PARA CRIAÇÃO EM LOTE: quando a confirmação for dada, retorne todos os pacientes solicitados em um único array JSON completo. Não use comentários, reticências, abreviações como "...", texto explicativo, markdown ou blocos de código. Cada objeto precisa conter CPF e e-mail únicos. Nunca interrompa a lista antes de fechar o array. Para lotes com mais de 10 pacientes, use somente as chaves compactas obrigatórias: name, email, cpf, birthDate e sexo. Não inclua medicamentos, exames, alergias, unidadeSaude, examesDetalhes ou password; o sistema assume os valores padrão. Use valores curtos e realistas.`
+      : '';
+    const formCreationRules = isFormCreation
+      ? `\n\nCONTRATO DE CRIAÇÃO DO FORMULÁRIO: nunca escreva "string", "number", unions com | ou comentários no JSON. Retorne valores reais e JSON estritamente válido neste formato: {"title":"Nome do formulário","description":"Descrição","questions":[{"text":"Pergunta aberta","type":"SHORT_TEXT","required":true,"options":[]},{"text":"Pergunta de escolha","type":"MULTIPLE_CHOICE","required":true,"options":[{"text":"Opção","value":0}]}],"scoreRules":[{"minScore":0,"maxScore":10,"classification":"Classificação","conduct":"Encaminhamento","order":0}]}. Para criar vários formulários no mesmo pedido, retorne UM ÚNICO array JSON contendo cada formulário completo: [{...},{...}]. Use exclusivamente MULTIPLE_CHOICE, CHECKBOXES, SHORT_TEXT ou PARAGRAPH. SHORT_TEXT e PARAGRAPH são textos livres com "options": [] e valor zero. Apenas MULTIPLE_CHOICE e CHECKBOXES usam opções; cada "value", minScore, maxScore e order deve ser um inteiro. Seja conciso para concluir o JSON sem cortes.`
+      : '';
+    const maxTokens = promptConfig.allowLargeOutput
+      ? Math.min(promptConfig.maxTokens || 8192, 8192)
+      : isPatientCreation || isFormCreation
+        ? 4096
+        : Math.min(promptConfig.maxTokens || 2048, 4096);
 
     try {
+      // Arquivos de documento usam a API Responses, que aceita input_file.
+      // Imagens também são enviadas nela para manter uma única mensagem multimodal.
+      if (attachments.length) {
+        const lastUserMessageId = [...messages].reverse().find((message) => message.role === 'USER')?.idMessage;
+        const input = messages.map((message) => {
+          // Responses API exige output_text para mensagens históricas do assistente.
+          const content: any[] = [{ type: message.role === 'USER' ? 'input_text' : 'output_text', text: message.content }];
+          if (message.idMessage === lastUserMessageId) {
+            for (const file of attachments) {
+              const base64 = file.buffer.toString('base64');
+              if (file.mimetype.startsWith('image/')) {
+                content.push({ type: 'input_image', image_url: `data:${file.mimetype};base64,${base64}`, detail: 'auto' });
+              } else {
+                // A API espera o arquivo embutido como data URI, preservando o MIME
+                // necessário para interpretar corretamente PDFs e documentos.
+                content.push({ type: 'input_file', filename: file.originalname, file_data: `data:${file.mimetype};base64,${base64}` });
+              }
+            }
+          }
+          return { role: message.role === 'USER' ? 'user' : 'assistant', content };
+        });
+        const response = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiApiKey}` },
+          body: JSON.stringify({
+            model: promptConfig.model || 'gpt-4o-mini',
+            instructions: `${promptConfig.systemPrompt}${patientCreationRules}${formCreationRules}`,
+            input,
+            temperature: promptConfig.temperature || 0.7,
+            max_output_tokens: maxTokens,
+            ...(promptConfig.jsonObject ? { text: { format: { type: 'json_object' } } } : {}),
+          }),
+        });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new BadRequestException(`Erro ao chamar OpenAI: ${error.error?.message || 'Erro desconhecido'}`);
+        }
+        const data = await response.json();
+        const output = data.output_text || data.output?.flatMap((item: any) => item.content || []).find((item: any) => item.type === 'output_text')?.text;
+        return output || 'Desculpe, não consegui processar os anexos enviados.';
+      }
       const response = await fetch(this.openaiBaseUrl, {
         method: 'POST',
         headers: {
@@ -345,12 +458,13 @@ export class ChatService {
           messages: [
             {
               role: 'system',
-              content: promptConfig.systemPrompt,
+              content: `${promptConfig.systemPrompt}${patientCreationRules}${formCreationRules}`,
             },
             ...conversationMessages,
           ],
           temperature: promptConfig.temperature || 0.7,
-          max_tokens: promptConfig.maxTokens || 2048,
+          max_tokens: maxTokens,
+          ...(promptConfig.jsonObject ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
 
@@ -534,57 +648,42 @@ export class ChatService {
     return result.map(r => r.triggerName).filter(Boolean);
   }
 
-  private async processFormCreation(response: string, marker: string): Promise<Form | null> {
+  private async processFormCreation(response: string, marker: string, createdById: string): Promise<Form[]> {
     try {
       console.log('[ChatService] Processando criação de formulário...');
 
       const markerIndex = response.indexOf(marker);
       if (markerIndex === -1) {
         console.log('[ChatService] Marcador não encontrado');
-        return null;
+        return [];
       }
 
       const afterMarker = response.substring(markerIndex + marker.length).trim();
 
-      const jsonStartIndex = afterMarker.indexOf('{');
-      if (jsonStartIndex === -1) {
-        console.log('[ChatService] JSON não encontrado');
-        return null;
+      const jsonString = this.extractJsonValue(afterMarker);
+      if (!jsonString) {
+        console.log('[ChatService] JSON não encontrado ou incompleto');
+        return [];
       }
 
-      let braceCount = 0;
-      let jsonEndIndex = -1;
-      for (let i = jsonStartIndex; i < afterMarker.length; i++) {
-        if (afterMarker[i] === '{') braceCount++;
-        if (afterMarker[i] === '}') braceCount--;
-        if (braceCount === 0) {
-          jsonEndIndex = i;
-          break;
-        }
-      }
-
-      if (jsonEndIndex === -1) {
-        console.log('[ChatService] JSON incompleto');
-        return null;
-      }
-
-      const jsonString = afterMarker.substring(jsonStartIndex, jsonEndIndex + 1);
       console.log('[ChatService] JSON extraído:', jsonString.substring(0, 200) + '...');
 
-      const formData = JSON.parse(jsonString);
-      console.log('[ChatService] Criando formulário:', formData.title);
+      const parsed = JSON.parse(this.sanitizeAiJson(jsonString));
+      const formPayloads = (Array.isArray(parsed) ? parsed : [parsed]).map((form) => this.normalizeAiFormPayload(form));
+      if (!formPayloads.length) throw new BadRequestException('Nenhum formulário foi informado.');
 
-      const createdForm = await this.formService.create(formData);
-      console.log('[ChatService] Formulário criado com ID:', createdForm.idForm);
-
-      return createdForm;
+      const createdForms: Form[] = [];
+      for (const formData of formPayloads) {
+        createdForms.push(await this.formService.create(formData, createdById));
+      }
+      return createdForms;
     } catch (error) {
       console.error('Erro ao processar criação de formulário:', error);
-      return null;
+        return [];
     }
   }
 
-  private async processPatientCreation(response: string, marker: string): Promise<{ success: boolean; message: string }> {
+  private async processPatientCreation(response: string, marker: string, createdById: string): Promise<{ success: boolean; message: string }> {
     try {
       console.log('[ChatService] Processando criação de paciente(s)...');
 
@@ -595,41 +694,12 @@ export class ChatService {
 
       const afterMarker = response.substring(markerIndex + marker.length).trim();
 
-      // Try to find a JSON array or object
-      const arrayStart = afterMarker.indexOf('[');
-      const objStart = afterMarker.indexOf('{');
-
-      let startIndex: number;
-      let isArray: boolean;
-
-      if (arrayStart !== -1 && (objStart === -1 || arrayStart < objStart)) {
-        startIndex = arrayStart;
-        isArray = true;
-      } else if (objStart !== -1) {
-        startIndex = objStart;
-        isArray = false;
-      } else {
+      const rawJson = this.extractJsonValue(afterMarker);
+      if (!rawJson) {
         return { success: false, message: '❌ JSON com dados do(s) paciente(s) não encontrado na resposta.' };
       }
 
-      const openChar = isArray ? '[' : '{';
-      const closeChar = isArray ? ']' : '}';
-      let depth = 0;
-      let endIndex = -1;
-      for (let i = startIndex; i < afterMarker.length; i++) {
-        if (afterMarker[i] === openChar) depth++;
-        if (afterMarker[i] === closeChar) depth--;
-        if (depth === 0) {
-          endIndex = i;
-          break;
-        }
-      }
-
-      if (endIndex === -1) {
-        return { success: false, message: '❌ JSON com dados do(s) paciente(s) está incompleto.' };
-      }
-
-      const jsonString = afterMarker.substring(startIndex, endIndex + 1);
+      const jsonString = this.sanitizeAiJson(rawJson);
       const parsed = JSON.parse(jsonString);
       const patientsData: any[] = Array.isArray(parsed) ? parsed : [parsed];
 
@@ -685,7 +755,7 @@ export class ChatService {
             alergias,
           };
 
-          const created = await this.patientsService.create(registerData);
+          const created = await this.patientsService.create(registerData, createdById);
           successCount++;
           results.push(`✅ **${created.name}** — ${created.email}\n🔗 ${baseUrl}/admin/editar-paciente/${created.idUser}`);
         } catch (error: any) {
@@ -724,7 +794,162 @@ export class ChatService {
     }
   }
 
-  private async processUserCreation(response: string, marker: string): Promise<{ success: boolean; message: string }> {
+  /** Remove artefatos comuns de respostas de LLM sem tocar no conteúdo de strings JSON. */
+  private sanitizeAiJson(value: string): string {
+    const text = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    let output = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+      const next = text[index + 1];
+      if (inString) {
+        output += char;
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+        output += char;
+      } else if (char === '/' && next === '/') {
+        index += 1;
+        while (index + 1 < text.length && text[index + 1] !== '\n' && text[index + 1] !== '\r') index += 1;
+      } else if (char === '/' && next === '*') {
+        index += 2;
+        while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) index += 1;
+        index += 1;
+      } else {
+        output += char;
+      }
+    }
+
+    return output.replace(/,\s*([}\]])/g, '$1').trim();
+  }
+
+  /**
+   * Extrai o primeiro objeto/array JSON completo sem contar chaves que façam
+   * parte de uma string. A IA pode gerar fórmulas como "{idPergunta}", que
+   * quebravam o contador simples e faziam um JSON válido parecer incompleto.
+   */
+  private extractJsonValue(value: string): string | null {
+    const objectStart = value.indexOf('{');
+    const arrayStart = value.indexOf('[');
+    const start = arrayStart !== -1 && (objectStart === -1 || arrayStart < objectStart)
+      ? arrayStart
+      : objectStart;
+    if (start === -1) return null;
+
+    const openChar = value[start];
+    const closeChar = openChar === '{' ? '}' : ']';
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < value.length; index++) {
+      const char = value[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === openChar) {
+        depth += 1;
+      } else if (char === closeChar) {
+        depth -= 1;
+        if (depth === 0) return value.substring(start, index + 1);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * O chat chama FormService diretamente e, portanto, não passa pelo
+   * ValidationPipe do controller. Normalizamos aqui o contrato que a IA pode
+   * produzir antes de tentar gravar no Prisma.
+   */
+  private normalizeAiFormPayload(data: any): any {
+    if (!data || Array.isArray(data) || typeof data !== 'object') {
+      throw new BadRequestException('O formulário deve ser um objeto JSON.');
+    }
+
+    const title = typeof data.title === 'string' ? data.title.trim() : '';
+    if (title.length < 4) {
+      throw new BadRequestException('O formulário precisa de um título com ao menos 4 caracteres.');
+    }
+    if (!Array.isArray(data.questions) || data.questions.length === 0) {
+      throw new BadRequestException('O formulário precisa conter ao menos uma pergunta.');
+    }
+
+    const choiceTypes = new Set(['MULTIPLE_CHOICE', 'CHECKBOXES']);
+    const validTypes = new Set([...choiceTypes, 'SHORT_TEXT', 'PARAGRAPH']);
+    const toBoolean = (value: unknown) => value === true || value === 'true';
+    const toInteger = (value: unknown, field: string) => {
+      const parsed = typeof value === 'number' ? value : Number(value);
+      if (!Number.isInteger(parsed)) {
+        throw new BadRequestException(`${field} deve ser um número inteiro.`);
+      }
+      return parsed;
+    };
+
+    const questions = data.questions.map((question: any, index: number) => {
+      const type = typeof question?.type === 'string' ? question.type.trim().toUpperCase() : '';
+      const text = typeof question?.text === 'string' ? question.text.trim() : '';
+      if (!validTypes.has(type) || !text) {
+        throw new BadRequestException(`A pergunta ${index + 1} está com tipo ou texto inválido.`);
+      }
+
+      const rawOptions = Array.isArray(question.options) ? question.options : [];
+      if (choiceTypes.has(type) && rawOptions.length === 0) {
+        throw new BadRequestException(`A pergunta ${index + 1} precisa de ao menos uma opção.`);
+      }
+
+      return {
+        text,
+        type,
+        required: toBoolean(question.required),
+        imageUrl: typeof question.imageUrl === 'string' ? question.imageUrl : undefined,
+        imageUrls: Array.isArray(question.imageUrls) ? question.imageUrls.filter((url: unknown) => typeof url === 'string') : undefined,
+        options: choiceTypes.has(type)
+          ? rawOptions.map((option: any, optionIndex: number) => {
+            const optionText = typeof option?.text === 'string' ? option.text.trim() : '';
+            if (!optionText) throw new BadRequestException(`A opção ${optionIndex + 1} da pergunta ${index + 1} não possui texto.`);
+            return { text: optionText, value: toInteger(option.value, `O valor da opção ${optionIndex + 1}`) };
+          })
+          : [],
+      };
+    });
+
+    const scoreRules = data.scoreRules === undefined ? undefined : (() => {
+      if (!Array.isArray(data.scoreRules)) throw new BadRequestException('scoreRules deve ser uma lista.');
+      return data.scoreRules.map((rule: any, index: number) => {
+        const classification = typeof rule?.classification === 'string' ? rule.classification.trim() : '';
+        const conduct = typeof rule?.conduct === 'string' ? rule.conduct.trim() : '';
+        if (!classification || !conduct) throw new BadRequestException(`A regra de pontuação ${index + 1} está incompleta.`);
+        return {
+          minScore: toInteger(rule.minScore, 'minScore'),
+          maxScore: toInteger(rule.maxScore, 'maxScore'),
+          classification,
+          conduct,
+          order: rule.order === undefined ? index : toInteger(rule.order, 'order'),
+        };
+      });
+    })();
+
+    return {
+      title,
+      description: typeof data.description === 'string' ? data.description : '',
+      questions,
+      ...(scoreRules !== undefined ? { scoreRules } : {}),
+    };
+  }
+
+  private async processUserCreation(response: string, marker: string, createdById: string): Promise<{ success: boolean; message: string }> {
     try {
       console.log('[ChatService] Processando criação de usuário(s)...');
 
@@ -844,7 +1069,7 @@ export class ChatService {
             active: userData.active !== undefined ? userData.active : true,
           };
 
-          const created = await this.userService.create(createData);
+          const created = await this.userService.create(createData, createdById);
           successCount++;
 
           const nivelNome = niveisList.find((n: any) => n.idNivelAcesso === nivelAcessoId)?.nome || 'N/A';

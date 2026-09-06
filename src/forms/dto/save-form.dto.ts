@@ -11,6 +11,8 @@ class OptionDto {
   text: string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   value: number;
 }
 
@@ -37,10 +39,11 @@ class QuestionDto {
   @IsString({ each: true })
   imageUrls?: string[];
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OptionDto)
-  options: OptionDto[];
+  options?: OptionDto[];
 }
 
 class ScoreRuleDto {

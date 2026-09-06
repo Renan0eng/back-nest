@@ -49,6 +49,24 @@ export class TriggerDbService implements OnModuleInit {
   async onModuleInit() {
     // Seed inicial das triggers padrão se não existirem
     await this.seedDefaultTriggersIfNeeded();
+    await this.ensureFreeTextFormInstructions();
+  }
+
+  /** Mantém a trigger persistida compatível com perguntas de texto livre. */
+  private async ensureFreeTextFormInstructions() {
+    const trigger = await this.prisma.aiTrigger.findUnique({
+      where: { triggerId: 'form-creation' },
+      select: { id: true, systemPrompt: true },
+    });
+    if (!trigger || trigger.systemPrompt.includes('SHORT_TEXT')) return;
+
+    await this.prisma.aiTrigger.update({
+      where: { id: trigger.id },
+      data: {
+        systemPrompt: `${trigger.systemPrompt}\n\nTIPOS DE PERGUNTA SUPORTADOS: MULTIPLE_CHOICE, CHECKBOXES, SHORT_TEXT e PARAGRAPH. SHORT_TEXT e PARAGRAPH são perguntas de texto livre, sem pontuação, e precisam conter "options": []. Apenas MULTIPLE_CHOICE e CHECKBOXES usam options com "value" numérico.`,
+      },
+    });
+    this.triggerLogsBus.emit('[TriggerDbService] Trigger de formulários atualizada para aceitar texto livre.');
   }
 
   /**
@@ -107,15 +125,17 @@ AUTORIZAÇÃO
 Pergunte: "Posso criar esse formulário agora no sistema?"
 
 CRIAÇÃO
-Somente se o usuário confirmar, gere UM ÚNICO JSON com a primeira linha sendo: GERAR-FORM-159753
+Somente se o usuário confirmar, gere UM ÚNICO JSON com a primeira linha sendo: GERAR-FORM-159753. Para um formulário use um objeto; para vários formulários use um array com todos os objetos.
 
-ESTRUTURA DO JSON:
+ESTRUTURA DO JSON (use valores reais; nunca escreva string, number ou |):
 {
-  "title": string,
-  "description": string,
-  "questions": [{ "text": string, "type": "MULTIPLE_CHOICE" | "CHECKBOXES", "required": boolean, "options": [{ "text": string, "value": number }] }],
-  "scoreRules": [{ "minScore": number, "maxScore": number, "classification": string, "conduct": string, "order": number }]
-}`,
+  "title": "Nome do formulário",
+  "description": "Descrição do formulário",
+  "questions": [{ "text": "Pergunta", "type": "MULTIPLE_CHOICE", "required": true, "options": [{ "text": "Opção", "value": 0 }] }],
+  "scoreRules": [{ "minScore": 0, "maxScore": 10, "classification": "Classificação", "conduct": "Encaminhamento", "order": 0 }]
+}
+
+Para SHORT_TEXT e PARAGRAPH, use "options": []: são respostas abertas e sempre valem zero ponto. Opções com "value" só existem em MULTIPLE_CHOICE e CHECKBOXES.`,
         minScore: 5,
         priority: 1,
         active: true,
@@ -235,9 +255,10 @@ GERAR-PATIENTE-159753
 Para VÁRIOS pacientes:
 GERAR-PATIENTE-159753
 [
-  { ... },
-  { ... }
-]`,
+  { "name": "...", "email": "...", "cpf": "...", "birthDate": "YYYY-MM-DD", "sexo": "...", "unidadeSaude": "...", "medicamentos": [], "exames": false, "examesDetalhes": "", "alergias": [], "password": "..." }
+]
+
+IMPORTANTE: em lotes, retorne todos os itens solicitados. O conteúdo depois do marcador deve ser JSON válido puro: não use comentários, "..." como item, texto explicativo ou markdown. CPF e e-mail devem ser únicos em todos os itens. Para mais de 10 pacientes, envie somente name, email, cpf, birthDate e sexo em cada objeto; os demais campos são opcionais e o sistema usa valores padrão.`,
         minScore: 4,
         priority: 10,
         active: true,

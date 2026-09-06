@@ -130,31 +130,31 @@ Nunca use linguagem técnica com o usuário final
 
 Nunca reutilize exemplos fixos
 
-ESTRUTURA OBRIGATÓRIA DO JSON
+ESTRUTURA OBRIGATÓRIA DO JSON (use valores reais; nunca escreva string, number ou |)
 
 {
-"title": string,
-"description": string,
+"title": "Nome do formulário",
+"description": "Descrição do formulário",
 "questions": [
 {
-"text": string,
-"type": "MULTIPLE_CHOICE" | "CHECKBOXES",
-"required": boolean,
+"text": "Pergunta",
+"type": "MULTIPLE_CHOICE",
+"required": true,
 "options": [
 {
-"text": string,
-"value": number
+"text": "Opção",
+"value": 0
 }
 ]
 }
 ],
 "scoreRules": [
 {
-"minScore": number,
-"maxScore": number,
-"classification": string,
-"conduct": string,
-"order": number
+"minScore": 0,
+"maxScore": 10,
+"classification": "Classificação",
+"conduct": "Encaminhamento",
+"order": 0
 }
 ]
 }
@@ -167,7 +167,9 @@ Perguntas devem estar diretamente ligadas ao objetivo da triagem
 
 Tipos de pergunta devem ser escolhidos corretamente
 
-Todas as opções devem ter pontuação
+Perguntas MULTIPLE_CHOICE e CHECKBOXES devem ter options com pontuação
+
+Perguntas SHORT_TEXT e PARAGRAPH são respostas livres, sem pontuação e devem usar "options": []
 
 As regras de pontuação devem cobrir toda a faixa possível de pontos
 
@@ -175,7 +177,7 @@ Os valores devem ser originais e coerentes
 
 Se qualquer regra acima não for cumprida, a resposta é inválida`,
         temperature: 0.7,
-        maxTokens: 2048,
+        maxTokens: 4096,
     };
 
     constructor(private formService: FormService) { }
