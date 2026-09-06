@@ -34,6 +34,11 @@ const MENUS = [
   { nome: 'Fila de Atendimento', slug: 'fila' },
   { nome: 'Fila de Atendimento Notificações', slug: 'fila-notificacoes' },
   { nome: 'Estoque de Insumos', slug: 'estoque' },
+  { nome: 'Estoque de Insumos Admin', slug: 'estoque-admin' },
+  { nome: 'Notificar Perecíveis', slug: 'notificar-perciveis' },
+  { nome: 'Notificar Perecíveis Obrigatório', slug: 'notificar-perciveis-obrigatorio' },
+  { nome: 'Campanhas de Vacinação', slug: 'campanhas-vacinacao' },
+  { nome: 'Gerenciamento de Grupos de Insumo', slug: 'estoque-grupos-admin' },
 ];
 
 const NIVEIS = [
@@ -67,6 +72,12 @@ const NIVEL_SLUGS: Record<number, string[]> = {
     'fila',
     'fila-notificacoes',
     'estoque',
+    'estoque-admin',
+    'notificar-perciveis',
+    'notificar-perciveis-obrigatorio',
+    'notifications',
+    'campanhas-vacinacao',
+    'estoque-grupos-admin',
     'atendimento',
     'atendimento-ia',
   ],
@@ -224,6 +235,34 @@ async function seedGrupoPadrao(): Promise<number> {
     console.log(`  Grupo padrão já existe (id ${grupo.idGrupo})`);
   }
   return grupo.idGrupo;
+}
+
+async function seedSupplyGroups() {
+  const names = [
+    'Medicamentos', 'Luvas e EPIs', 'Seringas e Agulhas', 'Curativos',
+    'Higiene e Antissepsia', 'Materiais para Coleta', 'Materiais Hospitalares',
+    'Materiais Cirúrgicos', 'Descartáveis', 'Produtos de Limpeza',
+    'Materiais para Esterilização', 'Materiais Odontológicos', 'Materiais de Laboratório',
+    'Nutrição e Dietas', 'Materiais Administrativos', 'Equipamentos e Acessórios', 'Vacinas',
+  ];
+  for (const name of names) await prisma.supplyGroup.upsert({ where: { name }, update: { isCampaign: name === 'Vacinas' }, create: { name, isCampaign: name === 'Vacinas' } });
+  console.log(`  ${names.length} grupos de estoque ok`);
+}
+
+async function seedSupplies() {
+  const groups = await prisma.supplyGroup.findMany();
+  const byName = new Map(groups.map(g => [g.name, g.id]));
+  const items: Array<[string, string, string]> = [
+    ['Medicamentos','Paracetamol 500 mg comprimido','comprimido'], ['Medicamentos','Dipirona 500 mg comprimido','comprimido'], ['Medicamentos','Ibuprofeno 600 mg comprimido','comprimido'], ['Medicamentos','Amoxicilina 500 mg cápsula','cápsula'], ['Medicamentos','Azitromicina 500 mg comprimido','comprimido'], ['Medicamentos','Cefalexina 500 mg cápsula','cápsula'], ['Medicamentos','Sulfametoxazol + Trimetoprima','comprimido'], ['Medicamentos','Losartana 50 mg comprimido','comprimido'], ['Medicamentos','Enalapril 10 mg comprimido','comprimido'], ['Medicamentos','Amlodipino 5 mg comprimido','comprimido'], ['Medicamentos','Hidroclorotiazida 25 mg comprimido','comprimido'], ['Medicamentos','Metformina 850 mg comprimido','comprimido'], ['Medicamentos','Gliclazida 30 mg comprimido','comprimido'], ['Medicamentos','Insulina NPH 100 UI/mL','frasco'], ['Medicamentos','Insulina Regular 100 UI/mL','frasco'], ['Medicamentos','Omeprazol 20 mg cápsula','cápsula'], ['Medicamentos','Metoclopramida 10 mg comprimido','comprimido'], ['Medicamentos','Sais para reidratação oral','envelope'], ['Medicamentos','Loratadina 10 mg comprimido','comprimido'], ['Medicamentos','Prednisona 20 mg comprimido','comprimido'], ['Medicamentos','Salbutamol 100 mcg spray','frasco'], ['Medicamentos','Fluconazol 150 mg cápsula','cápsula'], ['Medicamentos','Albendazol 400 mg comprimido','comprimido'], ['Medicamentos','Metronidazol 250 mg comprimido','comprimido'], ['Medicamentos','Ácido fólico 5 mg comprimido','comprimido'], ['Medicamentos','Sulfato ferroso 40 mg comprimido','comprimido'], ['Medicamentos','Sinvastatina 20 mg comprimido','comprimido'], ['Medicamentos','Ácido acetilsalicílico 100 mg comprimido','comprimido'], ['Luvas e EPIs','Luva de procedimento P','caixa'], ['Luvas e EPIs','Luva de procedimento M','caixa'], ['Luvas e EPIs','Luva de procedimento G','caixa'], ['Luvas e EPIs','Luva estéril','par'], ['Luvas e EPIs','Máscara cirúrgica','caixa'], ['Luvas e EPIs','Máscara PFF2/N95','unidade'], ['Luvas e EPIs','Touca descartável','pacote'], ['Luvas e EPIs','Avental descartável','unidade'], ['Luvas e EPIs','Propé descartável','pacote'], ['Seringas e Agulhas','Seringa 1 mL','unidade'], ['Seringas e Agulhas','Seringa 3 mL','unidade'], ['Seringas e Agulhas','Seringa 5 mL','unidade'], ['Seringas e Agulhas','Seringa 10 mL','unidade'], ['Seringas e Agulhas','Seringa 20 mL','unidade'], ['Seringas e Agulhas','Agulha 13 x 4,5','caixa'], ['Seringas e Agulhas','Agulha 25 x 7','caixa'], ['Seringas e Agulhas','Agulha 25 x 8','caixa'], ['Seringas e Agulhas','Agulha 30 x 7','caixa'], ['Seringas e Agulhas','Agulha 40 x 12','caixa'], ['Seringas e Agulhas','Scalp 21G','caixa'], ['Seringas e Agulhas','Lanceta para glicemia','caixa'], ['Curativos','Gaze estéril 7,5 x 7,5','pacote'], ['Curativos','Compressa estéril','pacote'], ['Curativos','Algodão hidrófilo','rolo'], ['Curativos','Atadura de crepe','unidade'], ['Curativos','Esparadrapo','rolo'], ['Curativos','Micropore','rolo'], ['Higiene e Antissepsia','Álcool 70%','litro'], ['Higiene e Antissepsia','Clorexidina','frasco'], ['Higiene e Antissepsia','PVPI','frasco'], ['Higiene e Antissepsia','Sabonete antisséptico','frasco'], ['Acesso venoso','Cateter intravenoso/Jelco','unidade'], ['Acesso venoso','Garrote','unidade'], ['Infusão','Equipo de soro','unidade'], ['Infusão','Extensor','unidade'], ['Infusão','Torneira de 3 vias','unidade'], ['Soros','Soro fisiológico 0,9%','frasco'], ['Soros','Glicose 5%','frasco'], ['Soros','Ringer Lactato','frasco'], ['Materiais para Coleta','Tubo de coleta','caixa'], ['Materiais para Coleta','Frasco de urina','unidade'], ['Materiais para Coleta','Coletor universal','unidade'], ['Materiais para Coleta','Swab estéril','caixa'], ['Sondas','Sonda uretral','unidade'], ['Sondas','Sonda nasogástrica','unidade'], ['Sondas','Sonda Foley','unidade'], ['Oxigenoterapia','Cateter nasal','unidade'], ['Oxigenoterapia','Máscara de oxigênio','unidade'], ['Descartáveis','Lençol descartável','pacote'], ['Descartáveis','Copo descartável','pacote'], ['Resíduos','Coletor de perfurocortante','unidade'], ['Esterilização','Papel grau cirúrgico','rolo'], ['Esterilização','Indicador químico','caixa'], ['Ginecológicos','Espéculo descartável','unidade'], ['Ginecológicos','Escova cervical','caixa'], ['Ginecológicos','Espátula de Ayre','caixa'], ['Pequenos procedimentos','Lâmina de bisturi','caixa'], ['Pequenos procedimentos','Fio de sutura','caixa'], ['Pequenos procedimentos','Campo estéril','unidade'], ['Vacinas','Influenza trivalente','dose'], ['Vacinas','COVID-19','dose'], ['Vacinas','Hepatite B','dose'], ['Vacinas','BCG','dose'], ['Vacinas','Pentavalente','dose'], ['Vacinas','Poliomielite (VIP)','dose'], ['Vacinas','Rotavírus','dose'], ['Vacinas','Pneumocócica 10-valente','dose'], ['Vacinas','Meningocócica C','dose'], ['Vacinas','Febre amarela','dose'], ['Vacinas','Tríplice viral','dose'], ['Vacinas','DTP','dose'], ['Vacinas','HPV','dose'],
+  ];
+  for (const [group, name, unit] of items) {
+    const aliases: Record<string, string> = { 'Acesso venoso': 'Materiais Hospitalares', 'Infusão': 'Materiais Hospitalares', 'Soros': 'Medicamentos', Sondas: 'Materiais Hospitalares', Oxigenoterapia: 'Equipamentos e Acessórios', Resíduos: 'Descartáveis', Esterilização: 'Materiais para Esterilização', Ginecológicos: 'Materiais Hospitalares', 'Pequenos procedimentos': 'Materiais Cirúrgicos' };
+    const supplyGroupId = byName.get(aliases[group] || group);
+    if (!supplyGroupId) continue;
+    const existing = await prisma.supply.findFirst({ where: { name, supplyGroupId } });
+    if (!existing) await prisma.supply.create({ data: { name, unit, balance: 0, minStock: 0, supplyGroupId } });
+  }
+  console.log(`  ${items.length} insumos seed ok (saldo inicial zero)`);
 }
 
 async function migrarPacientesAppParaGrupoPadrao(grupoId: number) {
@@ -465,6 +504,8 @@ async function main() {
   await seedPermissoes();
   await seedAdminUser();
   const grupoPadraoId = await seedGrupoPadrao();
+  await seedSupplyGroups();
+  await seedSupplies();
   await vincularUsuariosSemGrupoAoPadrao(grupoPadraoId);
   await seedTriagemForm(grupoPadraoId);
   await migrarPacientesAppParaGrupoPadrao(grupoPadraoId);
