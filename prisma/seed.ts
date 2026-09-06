@@ -12,6 +12,7 @@ const MENUS = [
   { nome: 'Gerenciar Usuários', slug: 'gerenciar-usuarios' },
   { nome: 'Logar como Usuário', slug: 'logar-como' },
   { nome: 'Formulários', slug: 'formulario' },
+  { nome: 'Editor de Formulários com IA', slug: 'formulario-ia' },
   { nome: 'Respostas de Formulários', slug: 'respostas' },
   { nome: 'Atribuição de Usuários', slug: 'atribuir-usuarios' },
   { nome: 'Pacientes', slug: 'paciente' },

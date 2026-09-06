@@ -1,14 +1,14 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AuthService } from 'src/auth/auth.service';
-import { PrismaService } from 'src/database/prisma.service';
+import { LogsService } from 'src/logs/logs.service';
 
 @Catch()
 @Injectable()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
-  constructor(private prisma: PrismaService, private authService: AuthService) {}
+  constructor(private logsService: LogsService, private authService: AuthService) {}
 
   async catch(exception: any, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -128,8 +128,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         secure: (req as any).secure || false,
       };
 
-      await (this.prisma as any).errorLog.create({
-        data: {
+      await this.logsService.create({
           message: typeof message === 'string' ? message : JSON.stringify(message),
           stack: stack,
           method: req.method,
@@ -144,7 +143,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
           line: line,
           column: column,
           metadata: metadata,
-        },
       });
     } catch (e) {
       // If DB write fails, log to console so we don't lose the information

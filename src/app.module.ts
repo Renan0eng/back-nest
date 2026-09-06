@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AcessoModule } from './acesso/acesso.module';
+import { AvatarModule } from './avatars/avatar.module';
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { AttendancesModule } from './attendances/attendances.module';
@@ -22,7 +23,7 @@ import { PushModule } from './push/push.module';
 import { UserModule } from './user/user.module';
 
 @Module({
-  imports: [AuthModule, DatabaseModule, FormModule, AcessoModule, UserModule, AppointmentsModule, AttendancesModule, PatientsModule, LogsModule, NotificationsModule, PushModule, AdminDashboardModule, ChatModule, CampanhasModule, GruposModule, MedicosModule, EscalaModule, FilaModule, EstoqueModule, ExamRequestsModule],
+  imports: [AuthModule, DatabaseModule, AvatarModule, FormModule, AcessoModule, UserModule, AppointmentsModule, AttendancesModule, PatientsModule, LogsModule, NotificationsModule, PushModule, AdminDashboardModule, ChatModule, CampanhasModule, GruposModule, MedicosModule, EscalaModule, FilaModule, EstoqueModule, ExamRequestsModule],
   providers: [AllExceptionsFilter],
 })
 export class AppModule {}

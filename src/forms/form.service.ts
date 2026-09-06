@@ -11,6 +11,19 @@ export class FormService {
         private notificationHelper: NotificationHelperService,
     ) { }
 
+    /** Somente perguntas de escolha possuem alternativas e podem pontuar. */
+    private isChoiceQuestion(type: string) {
+        return type === 'MULTIPLE_CHOICE' || type === 'CHECKBOXES';
+    }
+
+    /**
+     * Perguntas de texto livre não persistem alternativas (nem valores). Isso
+     * também corrige formulários antigos que tenham opções residuais ao editar.
+     */
+    private getQuestionOptions(question: { type: string; options?: any[] }) {
+        return this.isChoiceQuestion(question.type) ? (question.options || []) : [];
+    }
+
     // Ensure score rule ranges do not overlap within the same form
     private ensureNoOverlap(rules: { minScore: number; maxScore: number; idScoreRule?: string }[]) {
         const list = [...rules].map(r => ({ ...r, minScore: Number(r.minScore), maxScore: Number(r.maxScore) }));
@@ -257,6 +270,22 @@ export class FormService {
             or.push({ grupoId: { in: scope.groupIds } });
         }
         return { OR: or };
+    }
+
+    private async resolveCreationGroupId(createdById?: string): Promise<number | null> {
+        if (createdById) {
+            const membership = await this.prisma.grupo_Membro.findFirst({
+                where: { userId: createdById },
+                orderBy: { joinedAt: 'asc' },
+                select: { grupoId: true },
+            });
+            if (membership) return membership.grupoId;
+        }
+        const defaultGroup = await this.prisma.grupo.findFirst({
+            where: { isDefault: true },
+            select: { idGrupo: true },
+        });
+        return defaultGroup?.idGrupo ?? null;
     }
 
     async findAll(opts?: { page?: number; pageSize?: number; filters?: any; scope?: { visibleUserIds: string[]; groupIds: number[] } | null }) {
@@ -514,6 +543,7 @@ export class FormService {
 
     async create(dto: SaveFormDto, createdById?: string) {
         const { title, description, questions, scoreRules, scoreFormula } = dto;
+        const grupoId = await this.resolveCreationGroupId(createdById);
 
         if (scoreRules && scoreRules.length > 0) {
             this.ensureNoOverlap(scoreRules);
@@ -526,6 +556,7 @@ export class FormService {
                 description,
                 scoreFormula: scoreFormula || null,
                 createdById: createdById || null,
+                grupoId,
                 questions: {
                     create: questions.map((q, qIndex) => ({
                         text: q.text,
@@ -535,7 +566,7 @@ export class FormService {
                         imageUrls: q.imageUrls || (q.imageUrl ? [q.imageUrl] : []),
                         order: qIndex,
                         options: {
-                            create: q.options.map((opt, oIndex) => ({
+                            create: this.getQuestionOptions(q).map((opt, oIndex) => ({
                                 text: opt.text,
                                 order: oIndex,
                                 value: opt.value,
@@ -628,7 +659,8 @@ export class FormService {
                     const oldOptions = await tx.option.findMany({
                         where: { questionId: oldQuestion.idQuestion },
                     });
-                    for (const option of question.options) {
+                    const questionOptions = this.getQuestionOptions(question);
+                    for (const option of questionOptions) {
                         const oldOption = oldOptions.find(o => o.idOption === option.idOption);
                         if (oldOption) {
                             await tx.option.update({
@@ -636,21 +668,21 @@ export class FormService {
                                 data: {
                                     text: option.text,
                                     value: option.value,
-                                    order: question.options.indexOf(option),
+                                    order: questionOptions.indexOf(option),
                                 },
                             });
                         } else {
                             await tx.option.create({
                                 data: {
                                     text: option.text,
-                                    order: question.options.indexOf(option),
+                                    order: questionOptions.indexOf(option),
                                     value: option.value,
                                     questionId: oldQuestion.idQuestion,
                                 },
                             });
                         }
                     }
-                    const keptOptionIds = question.options
+                    const keptOptionIds = questionOptions
                         .map(option => option.idOption)
                         .filter((id): id is string => Boolean(id));
                     await tx.option.deleteMany({
@@ -670,7 +702,7 @@ export class FormService {
                         },
                     });
                     await tx.option.createMany({
-                        data: question.options.map((opt, oIndex) => ({
+                        data: this.getQuestionOptions(question).map((opt, oIndex) => ({
                             text: opt.text,
                             order: oIndex,
                             value: opt.value,
@@ -1013,6 +1045,7 @@ export class FormService {
                                 idUser: true,
                                 name: true,
                                 email: true,
+                                avatar: true,
                             },
                         },
                         answers: {
