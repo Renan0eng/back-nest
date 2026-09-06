@@ -1,5 +1,6 @@
 import {
     Body,
+    BadRequestException,
     Controller,
     Delete,
     Get,
@@ -9,9 +10,12 @@ import {
     Req,
     UnauthorizedException,
     UseGuards,
+    UseInterceptors,
     UsePipes,
     ValidationPipe,
+    UploadedFiles,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { AppTokenGuard } from 'src/auth/app-token.guard';
 import { AuthService } from 'src/auth/auth.service';
@@ -60,7 +64,29 @@ export class ChatController {
     return this.chatService.getDistinctTriggerNames();
   }
 
+  @Post('assistant/form-builder')
+  @Menu('formulario-ia')
+  @UseInterceptors(FilesInterceptor('files', 5, { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async assistFormBuilder(
+    @Body('content') content: string,
+    @Body('form') form: string,
+    @UploadedFiles() files: Express.Multer.File[] = [],
+  ) {
+    let parsedForm: unknown;
+    try {
+      parsedForm = JSON.parse(form);
+    } catch {
+      throw new BadRequestException('O rascunho do formulário é inválido.');
+    }
+    return this.chatService.assistFormBuilder(content, parsedForm, files);
+  }
+
   private async getUserIdFromRequest(req: Request): Promise<string> {
+    // AppTokenGuard aceita Bearer e refresh_token, e já anexa o usuário.
+    // Priorizar esse valor evita rejeitar uma sessão válida baseada em cookie.
+    const guardedUserId = (req as any).user?.idUser;
+    if (guardedUserId) return guardedUserId;
+
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new UnauthorizedException('Token não fornecido');
@@ -101,14 +127,16 @@ export class ChatController {
   }
 
   @Post(':chatId/messages')
+  @UseInterceptors(FilesInterceptor('files', 5, { limits: { fileSize: 5 * 1024 * 1024 } }))
   @UsePipes(new ValidationPipe())
   async addMessage(
     @Req() req: Request,
     @Param('chatId') chatId: string,
     @Body() dto: CreateMessageDto,
+    @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     const userId = await this.getUserIdFromRequest(req);
-    return this.chatService.addMessage(chatId, userId, dto);
+    return this.chatService.addMessage(chatId, userId, dto, files);
   }
 
   @Delete(':chatId')

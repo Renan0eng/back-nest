@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UnauthorizedException, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, UnauthorizedException, UploadedFile, UseGuards, UseInterceptors, UsePipes, ValidationPipe } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Request, Response } from 'express';
 import { AppTokenGuard } from 'src/auth/app-token.guard';
 import { AuthService } from 'src/auth/auth.service';
 import { Menu } from 'src/auth/menu.decorator';
@@ -7,6 +8,7 @@ import { GruposService } from 'src/grupos/grupos.service';
 import { SaveFormDto } from './dto/save-form.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
 import { FormService } from './form.service';
+import { FormImageService } from './form-image.service';
 
 @Controller('forms')
 @UseGuards(AppTokenGuard)
@@ -16,7 +18,25 @@ export class FormController {
         private readonly formService: FormService,
         private readonly authService: AuthService,
         private readonly gruposService: GruposService,
+        private readonly formImageService: FormImageService,
     ) { }
+
+    @Post('images')
+    @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+    async uploadImage(@UploadedFile() file: Express.Multer.File, @Req() request: Request) {
+        const imageId = await this.formImageService.upload(file);
+        const baseUrl = process.env.PUBLIC_API_URL || `${request.protocol}://${request.get('host')}`;
+        return { id: imageId, url: `${baseUrl}/forms/images/${imageId}` };
+    }
+
+    @Get('images/:fileId')
+    async getImage(@Param('fileId') fileId: string, @Res() response: Response) {
+        const image = await this.formImageService.openDownload(fileId);
+        response.setHeader('Content-Type', image.contentType);
+        response.setHeader('Content-Length', image.length.toString());
+        response.setHeader('Cache-Control', 'private, max-age=86400');
+        image.stream.pipe(response);
+    }
 
     @Get()
     async findAll(
@@ -315,6 +335,24 @@ export class FormController {
         @Body('userIds') userIds: string[],
     ) {
         return this.formService.assignUsers(id, userIds);
+    }
+
+    @Post(':id/assign-patient')
+    @Menu('atribuir-usuarios')
+    addAssignedUsers(
+        @Param('id') id: string,
+        @Body('userIds') userIds: string[],
+    ) {
+        return this.formService.addAssignedUsers(id, userIds);
+    }
+
+    @Post('assignment-status')
+    @Menu('atribuir-usuarios')
+    getAssignmentStatus(
+        @Body('formIds') formIds: string[] = [],
+        @Body('patientIds') patientIds: string[] = [],
+    ) {
+        return this.formService.getAssignmentStatus(formIds, patientIds);
     }
 
     // remove o usuário da atribuição

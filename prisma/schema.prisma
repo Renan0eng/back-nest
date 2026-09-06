@@ -86,6 +86,7 @@ model User {
   filaNotificacoes FilaNotificacaoUsuario[]
   afiliacoesSolicitadas GrupoAfiliacao[] @relation("GrupoAfiliacaoSolicitante")
   formsCriados  Form[]  @relation("FormCreator")
+  campaignsCriadas Campaign[] @relation("CampaignCreator")
 
   // Grupo ao qual o paciente pertence (para escopo de visualização)
   grupoPacienteId Int?
@@ -180,6 +181,7 @@ model Form {
   updatedAt   DateTime   @updatedAt
   isScreening Boolean    @default(false)
   active      Boolean    @default(true)
+  scoreFormula String?
 
   @@index([createdById])
   @@index([grupoId])
@@ -214,6 +216,8 @@ model Question {
   formId   String
   options  Option[]
   answers  Answer[]
+  imageUrl String?
+  imageUrls String[] @default([])
 }
 
 model Option {
@@ -539,6 +543,7 @@ model UserNotification {
   status         NotificationStatus @default(UNREAD)
   deliveredAt    DateTime?
   readAt         DateTime?
+  confirmedAt    DateTime?
   muted          Boolean @default(false)
   createdAt      DateTime @default(now())
 
@@ -659,6 +664,57 @@ model Grupo {
 
   @@index([createdById])
   @@index([isDefault])
+}
+
+/// Grupo/categoria própria do estoque (não confundir com Grupo hospitalar).
+model SupplyGroup {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  isCampaign  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  supplies    Supply[]
+}
+
+enum CampaignStage {
+  IDEIA
+  IMAGEM
+  AGENDADA
+  PUBLICADA
+}
+
+model Campaign {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  stage       CampaignStage @default(IDEIA)
+  scheduledAt DateTime?
+  imageUrl    String?
+  instagramPostId String?
+  emailSubject String?
+  emailBody    String?
+  createdById String?
+  createdBy   User?         @relation("CampaignCreator", fields: [createdById], references: [idUser])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  supplies    CampaignSupply[]
+
+  @@index([stage])
+  @@index([scheduledAt])
+}
+
+model CampaignSupply {
+  id                String   @id @default(cuid())
+  campaignId        String
+  supplyId          String
+  expectedQuantity  Int
+  campaignEnd       DateTime
+  campaign          Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  supply            Supply   @relation(fields: [supplyId], references: [id])
+  createdAt         DateTime @default(now())
+  @@unique([campaignId, supplyId])
+  @@index([supplyId])
 }
 
 model Grupo_Membro {
@@ -959,6 +1015,7 @@ model QueueTicket {
 /// Insumo de estoque hospitalar.
 model Supply {
   id        String    @id @default(cuid())
+  supplyGroupId Int?
   grupoId   Int?
   name      String
   unit      String // un, cx, L...
@@ -971,9 +1028,12 @@ model Supply {
   updatedAt DateTime  @updatedAt
 
   grupo     Grupo?           @relation("SupplyGrupo", fields: [grupoId], references: [idGrupo])
+  supplyGroup SupplyGroup?   @relation(fields: [supplyGroupId], references: [id])
   movements SupplyMovement[]
+  campaigns CampaignSupply[]
 
   @@index([grupoId])
+  @@index([supplyGroupId])
 }
 
 enum SupplyMovementType {
@@ -988,6 +1048,8 @@ model SupplyMovement {
   type         SupplyMovementType
   quantity     Int
   reason       String?
+  lot          String?
+  expiresAt    DateTime?
   attendanceId String?
   userId       String?
   createdAt    DateTime           @default(now())

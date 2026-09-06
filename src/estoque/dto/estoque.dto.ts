@@ -31,6 +31,10 @@ export class CreateSupplyDto {
     @IsInt()
     @IsOptional()
     grupoId?: number;
+
+    @IsInt()
+    @IsOptional()
+    supplyGroupId?: number;
 }
 
 export class UpdateSupplyDto {
@@ -54,6 +58,10 @@ export class UpdateSupplyDto {
     @IsDateString()
     @IsOptional()
     expiresAt?: string;
+
+    @IsInt()
+    @IsOptional()
+    supplyGroupId?: number;
 }
 
 export class MovimentacaoDto {
@@ -71,4 +79,18 @@ export class MovimentacaoDto {
     @IsString()
     @IsOptional()
     attendanceId?: string;
+
+    @IsString()
+    @IsOptional()
+    lot?: string;
+
+    @IsDateString()
+    @IsOptional()
+    expiresAt?: string;
+}
+
+export class UpdateSupplyGroupDto {
+    @IsString() @IsOptional() name?: string;
+    @IsString() @IsOptional() description?: string;
+    @IsOptional() isCampaign?: boolean;
 }

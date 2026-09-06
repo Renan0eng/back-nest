@@ -162,6 +162,8 @@ export class PatientsService {
                                 type: true,
                                 required: true,
                                 order: true,
+                                imageUrl: true,
+                                imageUrls: true,
                                 options: {
                                     orderBy: { order: 'asc' },
                                     select: {
@@ -178,9 +180,14 @@ export class PatientsService {
 
                 // responses previously submitted by this patient
                 formResponses: {
+                    where: { dt_delete: null },
+                    orderBy: { submittedAt: 'desc' },
                     select: {
                         idResponse: true,
                         submittedAt: true,
+                        totalScore: true,
+                        classification: true,
+                        conduct: true,
                         form: {
                             select: {
                                 idForm: true,
@@ -198,7 +205,11 @@ export class PatientsService {
                                         idQuestion: true,
                                         text: true,
                                         type: true,
-                                        options: {
+                                        order: true,
+                                        imageUrl: true,
+                                        imageUrls: true,
+                                options: {
+                                    orderBy: { order: 'asc' },
                                             select: {
                                                 idOption: true,
                                                 text: true,
@@ -243,6 +254,7 @@ export class PatientsService {
                 data: createData,
                 select: patientSelect,
             });
+            await this.assignPatientToGroups(created.idUser, creatorId);
             return created;
         } catch (e: any) {
             console.error('[PatientsService] Erro ao criar paciente:', e);
@@ -271,6 +283,34 @@ export class PatientsService {
                 stack: e?.stack?.split('\n').slice(0, 5),
             });
         }
+    }
+
+    private async assignPatientToGroups(patientId: string, creatorId?: string) {
+        let groupIds: number[] = [];
+        if (creatorId) {
+            const memberships = await this.prisma.grupo_Membro.findMany({
+                where: { userId: creatorId },
+                select: { grupoId: true },
+            });
+            groupIds = memberships.map((membership) => membership.grupoId);
+        }
+        if (!groupIds.length) {
+            const defaultGroup = await this.prisma.grupo.findFirst({
+                where: { isDefault: true },
+                select: { idGrupo: true },
+            });
+            if (defaultGroup) groupIds = [defaultGroup.idGrupo];
+        }
+        if (!groupIds.length) return;
+
+        await this.prisma.grupo_Membro.createMany({
+            data: groupIds.map((grupoId) => ({ grupoId, userId: patientId })),
+            skipDuplicates: true,
+        });
+        await this.prisma.user.update({
+            where: { idUser: patientId },
+            data: { grupoPacienteId: groupIds[0] },
+        });
     }
 
     async update(id: string, data: any) {

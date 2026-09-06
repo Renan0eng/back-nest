@@ -1,40 +1,45 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { AppTokenGuard } from 'src/auth/app-token.guard';
 import { Menu } from 'src/auth/menu.decorator';
-import { LogsService } from './logs.service';
+import { LogExclusionRuleInput, LogsService } from './logs.service';
 
 @Controller('logs')
 @UseGuards(AppTokenGuard)
 @Menu('log')
 export class LogsController {
-    constructor(private readonly logsService: LogsService) { }
+  constructor(private readonly logsService: LogsService) {}
 
-    @Get()
-    async list(
-        @Query('page') page?: string,
-        @Query('pageSize') pageSize?: string,
-        @Query('userId') userId?: string,
-        @Query('route') route?: string,
-        @Query('statusCode') statusCode?: string,
-        @Query('createdFrom') createdFrom?: string,
-        @Query('createdTo') createdTo?: string,
-        @Query('seen') seen?: string,
-    ) {
-        const p = page ? parseInt(page, 10) : undefined;
-        const ps = pageSize ? parseInt(pageSize, 10) : undefined;
-        const sc = statusCode ? parseInt(statusCode, 10) : undefined;
-        const seenFlag = typeof seen !== 'undefined' ? (seen === '1' || seen === 'true') : undefined;
+  @Get()
+  list(@Query() query: Record<string, string>) { return this.logsService.findAll(this.parseQuery(query)); }
 
-        return this.logsService.findAll({ page: p, pageSize: ps, userId, route, statusCode: sc, createdFrom, createdTo, seen: seenFlag });
-    }
+  @Get('analytics')
+  analytics(@Query() query: Record<string, string>) { return this.logsService.analytics(this.parseQuery(query)); }
 
-    @Get(':id')
-    async getOne(@Param('id') id: string) {
-        return this.logsService.findOne(id);
-    }
+  @Get('exclusion-rules')
+  listRules() { return this.logsService.listRules(); }
 
-    @Post(':id/seen')
-    async markSeen(@Param('id') id: string) {
-        return this.logsService.markAsSeen(id);
-    }
+  @Post('exclusion-rules')
+  createRule(@Body() input: LogExclusionRuleInput, @Req() req: Request) {
+    return this.logsService.createRule(input, (req.user as any)?.idUser || (req.user as any)?.id);
+  }
+
+  @Patch('exclusion-rules/:id')
+  updateRule(@Param('id') id: string, @Body() input: Partial<LogExclusionRuleInput>) { return this.logsService.updateRule(id, input); }
+
+  @Delete('exclusion-rules/:id')
+  deleteRule(@Param('id') id: string) { return this.logsService.deleteRule(id); }
+
+  @Post('exclusion-rules/run')
+  runRules() { return this.logsService.applyExclusionRules(); }
+
+  @Get(':id')
+  getOne(@Param('id') id: string) { return this.logsService.findOne(id); }
+
+  @Post(':id/seen')
+  markSeen(@Param('id') id: string) { return this.logsService.markAsSeen(id); }
+
+  private parseQuery(query: Record<string, string>) {
+    return { ...query, statusCode: query.statusCode ? Number(query.statusCode) : undefined, seen: query.seen === undefined ? undefined : query.seen === 'true' || query.seen === '1' };
+  }
 }

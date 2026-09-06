@@ -37,6 +37,12 @@ export class NotificationsController {
     return { status: 204 };
   }
 
+  @Patch(':id/confirm')
+  async confirm(@Param('id') id: string, @GetUser() user: User) {
+    await this.notifications.confirm(user.idUser, id);
+    return { status: 204 };
+  }
+
   @Patch('read-all')
   async markAllRead(
     @Body() body: { category?: string; before?: string },

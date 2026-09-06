@@ -85,6 +85,7 @@ export class NotificationsService {
       priority: r.notification.priority,
       createdAt: r.notification.createdAt,
       readAt: r.readAt ?? null,
+      confirmedAt: r.confirmedAt ?? null,
     }));
 
     const nextCursor = rows.length === take
@@ -92,6 +93,14 @@ export class NotificationsService {
       : undefined;
 
     return { items, nextCursor };
+  }
+
+  async confirm(userId: string, notificationId: string) {
+    const now = new Date();
+    await this.prisma.userNotification.update({
+      where: { notificationId_userId: { notificationId, userId } },
+      data: { status: 'READ' as any, readAt: now, confirmedAt: now },
+    });
   }
 
   async unreadCount(userId: string): Promise<number> {
