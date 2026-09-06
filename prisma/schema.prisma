@@ -181,6 +181,7 @@ model Form {
   updatedAt   DateTime   @updatedAt
   isScreening Boolean    @default(false)
   active      Boolean    @default(true)
+  scoreFormula String?
 
   @@index([createdById])
   @@index([grupoId])
@@ -215,6 +216,8 @@ model Question {
   formId   String
   options  Option[]
   answers  Answer[]
+  imageUrl String?
+  imageUrls String[] @default([])
 }
 
 model Option {

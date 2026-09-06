@@ -162,6 +162,8 @@ export class PatientsService {
                                 type: true,
                                 required: true,
                                 order: true,
+                                imageUrl: true,
+                                imageUrls: true,
                                 options: {
                                     orderBy: { order: 'asc' },
                                     select: {
@@ -178,9 +180,14 @@ export class PatientsService {
 
                 // responses previously submitted by this patient
                 formResponses: {
+                    where: { dt_delete: null },
+                    orderBy: { submittedAt: 'desc' },
                     select: {
                         idResponse: true,
                         submittedAt: true,
+                        totalScore: true,
+                        classification: true,
+                        conduct: true,
                         form: {
                             select: {
                                 idForm: true,
@@ -198,7 +205,11 @@ export class PatientsService {
                                         idQuestion: true,
                                         text: true,
                                         type: true,
-                                        options: {
+                                        order: true,
+                                        imageUrl: true,
+                                        imageUrls: true,
+                                options: {
+                                    orderBy: { order: 'asc' },
                                             select: {
                                                 idOption: true,
                                                 text: true,

@@ -5,6 +5,7 @@ import { GruposModule } from 'src/grupos/grupos.module';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { FormController } from './form.controller';
 import { FormService } from './form.service';
+import { FormImageService } from './form-image.service';
 
 @Module({
     imports: [
@@ -14,7 +15,7 @@ import { FormService } from './form.service';
         GruposModule,
     ],
     controllers: [FormController],
-    providers: [FormService],
+    providers: [FormService, FormImageService],
     exports: [FormService],
 })
 export class FormModule { }

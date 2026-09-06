@@ -52,6 +52,34 @@ export class FormService {
         return totalScore;
     }
 
+    /** Avalia somente números, parênteses e operações básicas após substituir {idQuestion}. */
+    private calculateFormScore(answers: any[], scoreFormula?: string | null): number {
+        const values = new Map<string, number>();
+        for (const answer of answers) {
+            values.set(answer.questionId || answer.question?.idQuestion, this.calculateScore([answer]));
+        }
+        if (!scoreFormula?.trim()) return [...values.values()].reduce((total, value) => total + value, 0);
+
+        const expression = scoreFormula.replace(/\{([^}]+)\}/g, (_, questionId) => String(values.get(questionId) ?? 0));
+        if (!/^[\d\s+\-*/().]+$/.test(expression)) {
+            throw new BadRequestException('A fórmula aceita apenas perguntas entre chaves, números, parênteses e + - * /.');
+        }
+        // A expressão foi restringida acima; não há acesso a nomes, propriedades ou chamadas.
+        const result = Function(`"use strict"; return (${expression})`)();
+        if (!Number.isFinite(result)) throw new BadRequestException('A fórmula produziu um resultado inválido.');
+        // Response.totalScore é inteiro: arredondamento garante persistência e regras previsíveis.
+        return Math.round(result);
+    }
+
+    private validateScoreFormula(scoreFormula: string | undefined, questionIds: string[]) {
+        if (!scoreFormula?.trim()) return;
+        const references = [...scoreFormula.matchAll(/\{([^}]+)\}/g)].map(match => match[1]);
+        if (references.some(id => !questionIds.includes(id))) {
+            throw new BadRequestException('A fórmula contém uma pergunta que não pertence mais ao formulário.');
+        }
+        this.calculateFormScore(questionIds.map(questionId => ({ questionId, question: { type: 'SHORT_TEXT', options: [] } })), scoreFormula);
+    }
+
     async getAssignedUsers(idForm: string) {
         const form = await this.prisma.form.findUnique({
             where: { idForm },
@@ -339,7 +367,7 @@ export class FormService {
                     description: true,
                     updatedAt: true,
                     _count: { select: { responses: true } },
-                    questions: { select: { formId: true, idQuestion: true, text: true, type: true, required: true, order: true, options: true } },
+                    questions: { orderBy: { order: 'asc' }, select: { formId: true, idQuestion: true, text: true, type: true, required: true, order: true, imageUrl: true, imageUrls: true, options: { orderBy: { order: 'asc' } } } },
                 },
                 orderBy: { updatedAt: 'desc' },
             });
@@ -367,7 +395,7 @@ export class FormService {
                     description: true,
                     updatedAt: true,
                     _count: { select: { responses: true } },
-                    questions: { select: { formId: true, idQuestion: true, text: true, type: true, required: true, order: true, options: true } },
+                    questions: { orderBy: { order: 'asc' }, select: { formId: true, idQuestion: true, text: true, type: true, required: true, order: true, imageUrl: true, imageUrls: true, options: { orderBy: { order: 'asc' } } } },
                 },
                 orderBy: { updatedAt: 'desc' },
                 skip: (page - 1) * pageSize,
@@ -412,22 +440,26 @@ export class FormService {
     }
 
     async create(dto: SaveFormDto, createdById?: string) {
-        const { title, description, questions, scoreRules } = dto;
+        const { title, description, questions, scoreRules, scoreFormula } = dto;
 
         if (scoreRules && scoreRules.length > 0) {
             this.ensureNoOverlap(scoreRules);
         }
+        this.validateScoreFormula(scoreFormula, questions.map(question => question.idQuestion).filter(Boolean) as string[]);
 
         return this.prisma.form.create({
             data: {
                 title,
                 description,
+                scoreFormula: scoreFormula || null,
                 createdById: createdById || null,
                 questions: {
                     create: questions.map((q, qIndex) => ({
                         text: q.text,
                         type: q.type,
                         required: q.required,
+                        imageUrl: q.imageUrl || q.imageUrls?.[0] || null,
+                        imageUrls: q.imageUrls || (q.imageUrl ? [q.imageUrl] : []),
                         order: qIndex,
                         options: {
                             create: q.options.map((opt, oIndex) => ({
@@ -455,12 +487,13 @@ export class FormService {
     }
 
     async update(formId: string, dto: SaveFormDto) {
-        const { title, description, questions, scoreRules } = dto;
+        const { title, description, questions, scoreRules, scoreFormula } = dto;
 
+        this.validateScoreFormula(scoreFormula, questions.map(question => question.idQuestion).filter(Boolean) as string[]);
         return this.prisma.$transaction(async (tx) => {
             await tx.form.update({
                 where: { idForm: formId },
-                data: { title, description },
+                data: { title, description, scoreFormula: scoreFormula || null },
             });
 
             // Handle score rules update
@@ -513,6 +546,9 @@ export class FormService {
                             text: question.text,
                             type: question.type,
                             required: question.required,
+                            imageUrl: question.imageUrl || question.imageUrls?.[0] || null,
+                            imageUrls: question.imageUrls || (question.imageUrl ? [question.imageUrl] : []),
+                            order: questions.indexOf(question),
                         },
                     });
 
@@ -527,6 +563,7 @@ export class FormService {
                                 data: {
                                     text: option.text,
                                     value: option.value,
+                                    order: question.options.indexOf(option),
                                 },
                             });
                         } else {
@@ -540,6 +577,12 @@ export class FormService {
                             });
                         }
                     }
+                    const keptOptionIds = question.options
+                        .map(option => option.idOption)
+                        .filter((id): id is string => Boolean(id));
+                    await tx.option.deleteMany({
+                        where: { questionId: oldQuestion.idQuestion, idOption: { notIn: keptOptionIds } },
+                    });
 
                 } else {
                     const newQuestion = await tx.question.create({
@@ -547,6 +590,8 @@ export class FormService {
                             text: question.text,
                             type: question.type,
                             required: question.required,
+                            imageUrl: question.imageUrl || question.imageUrls?.[0] || null,
+                            imageUrls: question.imageUrls || (question.imageUrl ? [question.imageUrl] : []),
                             order: questions.indexOf(question),
                             formId: formId,
                         },
@@ -669,7 +714,7 @@ export class FormService {
 
             if (!responseWithAnswers) return newResponse;
 
-            const totalScore = this.calculateScore(responseWithAnswers.answers);
+            const totalScore = this.calculateFormScore(responseWithAnswers.answers, responseWithAnswers.form.scoreFormula);
             const matchedRule = responseWithAnswers.form.scoreRules.find(
                 (rule: any) => totalScore >= rule.minScore && totalScore <= rule.maxScore,
             );
@@ -784,7 +829,7 @@ export class FormService {
 
             if (!responseWithAnswers) return existingResponse;
 
-            const totalScore = this.calculateScore(responseWithAnswers.answers);
+            const totalScore = this.calculateFormScore(responseWithAnswers.answers, responseWithAnswers.form.scoreFormula);
             const matchedRule = responseWithAnswers.form.scoreRules.find(
                 (rule: any) => totalScore >= rule.minScore && totalScore <= rule.maxScore,
             );
@@ -898,6 +943,7 @@ export class FormService {
                             },
                         },
                         answers: {
+                            orderBy: { question: { order: 'asc' } },
                             include: {
                                 question: {
                                     include: {
@@ -917,6 +963,9 @@ export class FormService {
         return {
             ...result,
             responses: result?.responses.map(response => {
+                if (response.totalScore !== null && response.totalScore !== undefined) {
+                    return { ...response, totalScore: response.totalScore };
+                }
                 let totalScore = 0;
 
                 for (const answer of response.answers) {
@@ -960,6 +1009,7 @@ export class FormService {
                         idForm: true,
                         description: true,
                         title: true,
+                        scoreFormula: true,
                     },
                 },
                 user: {
@@ -1011,6 +1061,7 @@ export class FormService {
             }
         }
 
+        totalScore = this.calculateFormScore(response.answers, response.form.scoreFormula);
         return {
             ...response,
             totalScore,
@@ -1058,6 +1109,10 @@ export class FormService {
         const hasScoreFilter = typeof scoreMin === 'number' || typeof scoreMax === 'number';
 
         const mapWithScore = (responses: any[]) => responses.map(response => {
+            // A resposta já guarda o resultado calculado na data do envio, inclusive fórmula personalizada.
+            if (response.totalScore !== null && response.totalScore !== undefined) {
+                return { ...response, totalScore: response.totalScore };
+            }
             let totalScore = 0;
             for (const answer of response.answers) {
                 const question = answer.question;
@@ -1078,7 +1133,7 @@ export class FormService {
                 include: {
                     form: { select: { idForm: true, title: true, isScreening: true } },
                     user: { select: { idUser: true, name: true, email: true } },
-                    answers: { include: { question: { include: { options: true } } } },
+                    answers: { orderBy: { question: { order: 'asc' } }, include: { question: { include: { options: { orderBy: { order: 'asc' } } } } } },
                 },
                 orderBy: { submittedAt: 'desc' },
             });
@@ -1163,6 +1218,7 @@ export class FormService {
                     select: {
                         idForm: true,
                         title: true,
+                        scoreFormula: true,
                     },
                 },
                 user: {
@@ -1173,6 +1229,7 @@ export class FormService {
                     },
                 },
                 answers: {
+                    orderBy: { question: { order: 'asc' } },
                     include: {
                         question: {
                             include: {
@@ -1197,6 +1254,8 @@ export class FormService {
             question: {
                 idQuestion: string;
                 text: string;
+                imageUrl: string | null;
+                imageUrls: string[];
                 type: string;
                 options: {
                     idOption: string;
@@ -1240,12 +1299,15 @@ export class FormService {
                 question: {
                     idQuestion: question.idQuestion,
                     text: question.text,
+                    imageUrl: question.imageUrl,
+                    imageUrls: question.imageUrls,
                     type: question.type,
                     options: question.options
                 }
             });
         }
 
+        totalScore = this.calculateFormScore(response.answers, response.form.scoreFormula);
         return {
             ...response,
             answers: answersWithScore,

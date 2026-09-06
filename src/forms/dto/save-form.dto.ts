@@ -28,6 +28,15 @@ class QuestionDto {
   @IsBoolean()
   required: boolean;
 
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls?: string[];
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OptionDto)
@@ -66,6 +75,10 @@ export class SaveFormDto {
   @IsString()
   @IsOptional()
   description: string;
+
+  @IsOptional()
+  @IsString()
+  scoreFormula?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
