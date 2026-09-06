@@ -169,6 +169,79 @@ export class FormService {
     }
 
     /**
+     * Acrescenta pacientes a um formulário sem remover os que já estavam
+     * atribuídos. É usado pela atribuição rápida por arrastar-e-soltar.
+     */
+    async addAssignedUsers(idForm: string, userIds: string[]) {
+        const form = await this.prisma.form.findUnique({
+            where: { idForm },
+            include: { assignedUsers: { select: { idUser: true } } },
+        });
+
+        if (!form) throw new NotFoundException('Formulário não encontrado');
+
+        const currentIds = new Set(form.assignedUsers.map((user) => user.idUser));
+        const newUserIds = [...new Set(userIds)].filter((id) => !currentIds.has(id));
+
+        if (!newUserIds.length) return { success: true, added: 0 };
+
+        const patients = await this.prisma.user.findMany({
+            where: { idUser: { in: newUserIds }, type: 'PACIENTE' },
+            select: { idUser: true },
+        });
+        const validIds = patients.map((patient) => patient.idUser);
+
+        if (!validIds.length) {
+            throw new BadRequestException('Informe ao menos um paciente válido para atribuição.');
+        }
+
+        await this.prisma.form.update({
+            where: { idForm },
+            data: { assignedUsers: { connect: validIds.map((idUser) => ({ idUser })) } },
+        });
+
+        for (const userId of validIds) {
+            try {
+                await this.notificationHelper.notifyNewPendingForm(userId, form.title, idForm);
+            } catch (error) {
+                console.error(`Erro ao enviar notificação para usuário ${userId}:`, error);
+            }
+        }
+
+        return { success: true, added: validIds.length };
+    }
+
+    async getAssignmentStatus(formIds: string[], patientIds: string[]) {
+        const uniqueFormIds = [...new Set(formIds)];
+        const uniquePatientIds = [...new Set(patientIds)];
+        if (!uniqueFormIds.length || !uniquePatientIds.length) return { statuses: [] };
+
+        const forms = await this.prisma.form.findMany({
+            where: { idForm: { in: uniqueFormIds } },
+            select: {
+                idForm: true,
+                assignedUsers: { where: { idUser: { in: uniquePatientIds } }, select: { idUser: true } },
+                responses: {
+                    where: { userId: { in: uniquePatientIds }, dt_delete: null },
+                    select: { userId: true },
+                },
+            },
+        });
+
+        return {
+            statuses: forms.flatMap((form) => {
+                const assigned = new Set(form.assignedUsers.map((user) => user.idUser));
+                const responded = new Set(form.responses.map((response) => response.userId));
+                return uniquePatientIds.map((patientId) => ({
+                    formId: form.idForm,
+                    patientId,
+                    status: responded.has(patientId) ? 'responded' : assigned.has(patientId) ? 'assigned' : 'unassigned',
+                }));
+            }),
+        };
+    }
+
+    /**
      * Monta a cláusula de escopo por grupo. Um formulário é visível se:
      *  - não tem dono nem grupo (legado, visível a todos), ou
      *  - foi criado por um usuário visível ao usuário atual, ou

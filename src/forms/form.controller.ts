@@ -337,6 +337,24 @@ export class FormController {
         return this.formService.assignUsers(id, userIds);
     }
 
+    @Post(':id/assign-patient')
+    @Menu('atribuir-usuarios')
+    addAssignedUsers(
+        @Param('id') id: string,
+        @Body('userIds') userIds: string[],
+    ) {
+        return this.formService.addAssignedUsers(id, userIds);
+    }
+
+    @Post('assignment-status')
+    @Menu('atribuir-usuarios')
+    getAssignmentStatus(
+        @Body('formIds') formIds: string[] = [],
+        @Body('patientIds') patientIds: string[] = [],
+    ) {
+        return this.formService.getAssignmentStatus(formIds, patientIds);
+    }
+
     // remove o usuário da atribuição
     @Post(':id/unassign')
     @Menu('atribuir-usuarios')
