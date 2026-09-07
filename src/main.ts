@@ -6,10 +6,12 @@ import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { MenuPermissionGuard } from './auth/menu-permission.guard';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { logJwtSecretsConfiguration } from './config/jwt-secrets';
 
 // Carrega variáveis de ambiente do arquivo .env (se existir)
 
 async function bootstrap() {
+  logJwtSecretsConfiguration();
   const app = await NestFactory.create(AppModule);
 
   app.useGlobalPipes(new ValidationPipe());

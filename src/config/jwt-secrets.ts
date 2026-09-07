@@ -29,3 +29,15 @@ export function getJwtSecrets(): JwtSecrets {
   }
   return secrets;
 }
+
+/** Diagnóstico de inicialização: nunca revela a chave inteira. */
+export function logJwtSecretsConfiguration(): void {
+  const secrets = getJwtSecrets();
+  const mask = (value: string) => `${value.slice(0, 3)}… (length=${value.length})`;
+
+  console.info('[security] JWT environment loaded', {
+    JWT_SECRET: mask(secrets.legacy),
+    JWT_ACCESS_SECRET: mask(secrets.access),
+    JWT_REFRESH_SECRET: mask(secrets.refresh),
+  });
+}
