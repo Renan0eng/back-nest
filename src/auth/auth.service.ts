@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/mail/mail.service';
+import { getJwtSecrets } from '../config/jwt-secrets';
 
 @Injectable()
 export class AuthService {
@@ -172,15 +173,16 @@ export class AuthService {
 
     async loginWeb(userPayload: { idUser: string; email: string }) {
         const payload = { email: userPayload.email, sub: userPayload.idUser, web: true };
+        const secrets = getJwtSecrets();
 
         const [accessToken, refreshToken] = await Promise.all([
             this.jwtService.signAsync(payload, {
-                secret: process.env.JWT_ACCESS_SECRET,
+                secret: secrets.access,
                 expiresIn: '15m',
             }),
 
             this.jwtService.signAsync(payload, {
-                secret: process.env.JWT_REFRESH_SECRET,
+                secret: secrets.refresh,
                 expiresIn: '7d',
             }),
         ]);
@@ -203,7 +205,7 @@ export class AuthService {
 
         const accessToken = await this.jwtService.signAsync(
             { email: target.email, sub: target.idUser, impersonatedBy: actor.idUser },
-            { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '1h' },
+            { secret: getJwtSecrets().access, expiresIn: '1h' },
         );
 
         return { accessToken, user: target };
@@ -214,7 +216,7 @@ export class AuthService {
         options: { type?: 'access' | 'refresh' | 'any' } = {},
     ) {
         const { type = 'any' } = options;
-        const defaultSecret = process.env.JWT_SECRET || 'SECRET_KEY';
+        const secrets = getJwtSecrets();
 
         const secretsToTry: string[] = [];
         const pushSecret = (secret?: string) => {
@@ -225,20 +227,16 @@ export class AuthService {
         };
 
         if (type === 'access' || type === 'any') {
-            pushSecret(process.env.JWT_ACCESS_SECRET);
+            pushSecret(secrets.access);
         }
 
         if (type === 'refresh' || type === 'any') {
-            pushSecret(process.env.JWT_REFRESH_SECRET);
+            pushSecret(secrets.refresh);
         }
 
         if (type !== 'refresh') {
             // Tokens gerados pelo login clássico usam o secret padrão do módulo JWT.
-            pushSecret(defaultSecret);
-        }
-
-        if (!secretsToTry.length) {
-            pushSecret(defaultSecret);
+            pushSecret(secrets.legacy);
         }
 
         for (const secret of secretsToTry) {
@@ -267,8 +265,9 @@ export class AuthService {
 
     async refreshToken(token: string) {
         try {
+            const secrets = getJwtSecrets();
             const dataToken = this.jwtService.verify(token, {
-                secret: process.env.JWT_REFRESH_SECRET,
+                secret: secrets.refresh,
                 ignoreExpiration: false,
             });
 
@@ -281,11 +280,11 @@ export class AuthService {
 
             const [accessToken, refreshToken] = await Promise.all([
                 this.jwtService.signAsync(payload, {
-                    secret: process.env.JWT_ACCESS_SECRET,
+                    secret: secrets.access,
                     expiresIn: '15m',
                 }),
                 this.jwtService.signAsync(payload, {
-                    secret: process.env.JWT_REFRESH_SECRET,
+                    secret: secrets.refresh,
                     expiresIn: '7d',
                 }),
             ]);

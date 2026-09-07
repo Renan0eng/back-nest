@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { MenuPermissionGuard } from './menu-permission.guard';
 import { RefreshTokenGuard } from './refresh-token.guard';
+import { getJwtSecrets } from '../config/jwt-secrets';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { RefreshTokenGuard } from './refresh-token.guard';
     PassportModule,
     MailModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'SECRET_KEY',
+      secret: getJwtSecrets().legacy,
       signOptions: { expiresIn: '8h' },
     }),
   ],
