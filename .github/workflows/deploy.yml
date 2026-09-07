@@ -54,6 +54,7 @@ jobs:
             --name back-prefeitura \
             --restart unless-stopped \
             --network prefeitura-net \
+            --add-host=host.docker.internal:host-gateway \
             -p 4000:4000 \
             --env-file /home/github/envs/back-prefeitura.env \
             devnardi/back-prefeitura:latest
